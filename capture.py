@@ -2,6 +2,18 @@ import os
 import cv2 #capture video
 import datetime
 import time
+import re
+import platform
+import subprocess
+
+def find_existing_img(folder):
+    files = os.listdir(folder)
+    numbers = []
+    for f in files:
+        match = re.search(r'_(\d+)\.jpg$', f)
+        if match:
+            numbers.append(int(match.group(1)))
+    return max(numbers) + 1 if numbers else 1
 
 def start_capture():
     print("Capture begin...")
@@ -27,7 +39,9 @@ def start_capture():
     print("[SPACE] to Capture | [ESC] to Quit")
     
     # create counter for image
-    count_img = 1
+    count_img = find_existing_img(folder)
+    if count_img > 1:
+        print(f"Existing photo found. Resuming at img #{count_img}")
     while True:
         ret, frame = capture.read()
         if not ret:
