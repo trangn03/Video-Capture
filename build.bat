@@ -1,10 +1,16 @@
 @echo off
-echo Deleting old versions...
+echo [1/4] Deleting old versions...
 rd /s /q build
 rd /s /q dist
-echo Activate virtual environment
-call venv/Scripts/activate
-echo Building new EXE...
-pyinstaller --onefile --windowed capture.py
-echo Done! Your new app is in the "dist" folder.
+echo [2/4] Activating Virtual Environment...
+call venv\Scripts\activate
+
+echo [3/4] Installing requirements inside venv...
+pip install opencv-python pyinstaller
+
+echo [4/4] Creating Portable App Folder...
+pyinstaller --onedir --windowed --noconfirm capture.py
+
+echo DONE! 
+echo Copy the ENTIRE "capture" folder from the "dist" directory to the other PC.
 pause
