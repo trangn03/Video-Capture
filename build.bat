@@ -8,9 +8,9 @@ call venv\Scripts\activate
 echo [3/4] Installing requirements inside venv...
 pip install opencv-python pyinstaller
 
-echo [4/4] Creating Portable App Folder...
-pyinstaller --onedir --windowed --noconfirm capture.py
+echo [4/4] Creating the file..
+pyinstaller --onefile --console capture.py
 
 echo DONE! 
-echo Copy the ENTIRE "capture" folder from the "dist" directory to the other PC.
+echo Your file is ready.
 pause
