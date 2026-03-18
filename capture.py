@@ -66,5 +66,8 @@ def start_capture():
     
     
 if __name__ == "__main__":
-    start_capture()
-    
+    try:
+        start_capture()
+    except Exception as e:
+        print("f\n CRASHED: {e}")
+        input("\Press ENTER to close the window.")    
