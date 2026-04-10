@@ -15,8 +15,25 @@ def find_existing_img(folder):
             numbers.append(int(match.group(1)))
     return max(numbers) + 1 if numbers else 1
 
+def find_all_cameras(camera):
+    available = []
+    for i in range(camera):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            available.append(i)
+            cap.release()
+    return available
+
 def start_capture():
     print("Capture begin...")
+    # Find all cameras
+    camera_count = find_all_cameras()
+    if not camera_count:
+        print("Error: Couldn't detect any camera")
+        return
+    
+    print(f"There are {camera_count} available camera ready to take picture")
+    
     # Get user input
     part_number = input("Enter PART NUMBER: ").strip() or "UNKNOWN"
     job_number = input("Enter JOB NUMBER: ").strip() or "TEMP"
@@ -28,7 +45,10 @@ def start_capture():
         print(f"Created folder: {folder}")
     
     # 0 is the default camera     
-    capture = cv2.VideoCapture(0)
+    capture = []
+    for i in camera_count:
+        cap_pic = cv2.VideoCapture(i)
+        capture.append(cap_pic)
 
     time.sleep(1)
     
@@ -69,5 +89,5 @@ if __name__ == "__main__":
     try:
         start_capture()
     except Exception as e:
-        print("f\n CRASHED: {e}")
+        print(f"\n CRASHED: {e}")
         input("\nPress ENTER to close the window.")    
