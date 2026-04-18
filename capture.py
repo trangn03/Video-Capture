@@ -5,6 +5,7 @@ import time
 import re
 import platform
 import subprocess
+import numpy as np
 
 """
     Check the input folder for any existing images
@@ -85,9 +86,10 @@ def start_capture():
                 if ret:
                     frames.append(frame)
                     # Display separate window for each camera feed
-                    cv2.imshow(f"Camera {camera_count[i]}", frame)
-                else:
-                    frames.append(None)
+
+            if frames: 
+                combined = np.hstack(frames)
+                cv2.imshow("All cameras", combined)
         
             key = cv2.waitKey(1) & 0xFF
 
