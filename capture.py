@@ -1,4 +1,5 @@
 import os
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 import cv2 #capture video
 import datetime
 import time
@@ -31,7 +32,6 @@ def find_existing_img(folder):
     Set maximum camera to check to 5 (0-4) temporarily, can be adjusted later if needed
 """
 def find_all_cameras(camera=10):
-    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
     camera_ids = []
     captures = []
     for i in range(camera):
@@ -42,7 +42,6 @@ def find_all_cameras(camera=10):
             print(f"Camera {i} ... connected.")
         else:
             cap.release()
-    os.environ["OPENCV_LOG_LEVEL"] = "WARNING"
     
     print(f"There are {len(camera_ids)} available camera(s) ready to take picture")
     
