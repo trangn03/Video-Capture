@@ -35,7 +35,7 @@ def find_all_cameras(camera=10):
     camera_ids = []
     captures = []
     for i in range(camera):
-        cap = cv2.VideoCapture(i, cv2.CAP_ANY)
+        cap = cv2.VideoCapture(i, cv2.CAP_ANY) #CAP_DSHOW
         if cap.isOpened():
             camera_ids.append(i)
             captures.append(cap) #keep open
