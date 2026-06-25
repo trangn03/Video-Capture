@@ -25,27 +25,34 @@ def find_existing_img(folder):
 
 """
     Check for how many cameras are plugged in
-    Return a list of available camera indices
+    Return:
+        camera_id = list of valid camera
+        captures: list of already-open VideoCapture object
     Set maximum camera to check to 5 (0-4) temporarily, can be adjusted later if needed
 """
-def find_all_cameras(camera=5):
-    available = []
+def find_all_cameras(camera=10):
+    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+    camera_ids = []
+    captures = []
     for i in range(camera):
-        cap = cv2.VideoCapture(i)
+        cap = cv2.VideoCapture(i, cv2.CAP_ANY)
         if cap.isOpened():
-            available.append(i)
+            camera_ids.append(i)
+            captures.append(cap) #keep open
+        else:
             cap.release()
-    return available
+    os.environ["OPENCV_LOG_LEVEL"] = "WARNING"
+    return camera_ids, captures
 
 def start_capture():
     print("Capture begin...")
     # Find all cameras
-    camera_count = find_all_cameras(5)
-    if not camera_count:
+    camera_ids, capture_list = find_all_cameras(10)
+    if not camera_ids:
         print("Error: Couldn't detect any camera. Please check the connection and try again.")
         return
     
-    print(f"There are {camera_count} available camera ready to take picture")
+    print(f"There are {camera_ids} available camera ready to take picture")
     
     # Get user input
     part_number = input("Enter PART NUMBER: ").strip() or "UNKNOWN"
@@ -57,38 +64,39 @@ def start_capture():
         os.makedirs(folder)
         print(f"Created folder: {folder}")
     
-    # 0 is the default camera     
-    # Initialize all cameras and store them in a list
-    capture_list = []
-    for i in camera_count:
-        cap_pic = cv2.VideoCapture(i)
-        capture_list.append(cap_pic)
-
-    time.sleep(1)
-    
-    # if not capture.isOpened():
-    #     print("Error: Could not access the camera. Please check the permission and try again.")
         
     print(f"\n Saving to: {os.path.abspath(folder)}")
     print("[SPACE] to Capture | [ESC] to Quit")
     
+    
+    # resume numbering if images already exist in the folder
     # create counter for image
     count_img = find_existing_img(folder)
     if count_img > 1:
         print(f"Existing photo found. Resuming at img #{count_img}")
         
+    time.sleep(1)
+        
     try: 
         while True:
             # List to store frames from all cameras
             frames = []
-            for i, cap in enumerate(capture_list):
+            for cap in capture_list:
                 ret, frame = cap.read()
                 if ret:
                     frames.append(frame)
                     # Display separate window for each camera feed
 
             if frames: 
-                combined = np.hstack(frames)
+                # Create all the frames to be same height
+                target_h = min(f.shape[0] for f in frames)
+                resized = []
+                for f in frames:
+                    h, w = f.shape[:2]
+                    new_w = int(w*target_h/h)
+                    resized.append(cv2.resize(f, (new_w, target_h)))
+                    
+                combined = np.hstack(resized)
                 cv2.imshow("All cameras", combined)
         
             key = cv2.waitKey(1) & 0xFF
@@ -100,7 +108,7 @@ def start_capture():
                 # Iterate through the frames 
                 for i, frame in enumerate(frames):
                     if frame is not None:
-                        cam_id = camera_count[i]
+                        cam_id = camera_ids[i]
                         filename = f"{folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
                         cv2.imwrite(filename, frame)
 
