@@ -39,9 +39,13 @@ def find_all_cameras(camera=10):
         if cap.isOpened():
             camera_ids.append(i)
             captures.append(cap) #keep open
+            print(f"Camera {i} ... connected.")
         else:
             cap.release()
     os.environ["OPENCV_LOG_LEVEL"] = "WARNING"
+    
+    print(f"There are {len(camera_ids)} available camera(s) ready to take picture")
+    
     return camera_ids, captures
 
 def start_capture():
@@ -51,8 +55,6 @@ def start_capture():
     if not camera_ids:
         print("Error: Couldn't detect any camera. Please check the connection and try again.")
         return
-    
-    print(f"There are {camera_ids} available camera ready to take picture")
     
     # Get user input
     part_number = input("Enter PART NUMBER: ").strip() or "UNKNOWN"
