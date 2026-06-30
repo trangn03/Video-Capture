@@ -47,6 +47,29 @@ def find_all_cameras(camera=10):
     
     return camera_ids, captures
 
+def flash_green(capture_list, camera_ids, target_h):
+    for _ in range(8):
+        frames = []
+        for cap in capture_list:
+            ret, frame = cap.read()
+            if ret:
+                frames.append(frame)
+        if frames:
+            resized = []
+            for i, f in enumerate(frames):
+                h, w = f.shape[:2]
+                new_w = int(w * target_h / h)
+                resized_f = cv2.resize(f, (new_w, target_h))
+                overlay = resized_f.copy()
+                cv2.rectangle(overlay, (0, 0), (new_w, target_h), (0, 255, 255), -1)
+                resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
+                cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                resized.append(resized_f)
+            combined = np.hstack(resized)
+            cv2.imshow("All cameras", combined)
+            cv2.waitKey(30)
+
 def start_capture():
     print("Capture begin...")
     # Find all cameras
@@ -54,31 +77,32 @@ def start_capture():
     if not camera_ids:
         print("Error: Couldn't detect any camera. Please check the connection and try again.")
         return
-    
+
     # Get user input
     part_number = input("Enter PART NUMBER: ").strip() or "UNKNOWN"
     job_number = input("Enter JOB NUMBER: ").strip() or "TEMP"
-    
+
     # create folder
     folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
     if not os.path.exists(folder):
         os.makedirs(folder)
         print(f"Created folder: {folder}")
-    
-        
+
+
     print(f"\n Saving to: {os.path.abspath(folder)}")
     print("[SPACE] to Capture | [ESC] to Quit")
-    
-    
+
+
     # resume numbering if images already exist in the folder
     # create counter for image
     count_img = find_existing_img(folder)
     if count_img > 1:
         print(f"Existing photo found. Resuming at img #{count_img}")
-        
+
     time.sleep(1)
-        
-    try: 
+    target_h = None
+
+    try:
         while True:
             # List to store frames from all cameras
             frames = []
@@ -86,33 +110,36 @@ def start_capture():
                 ret, frame = cap.read()
                 if ret:
                     frames.append(frame)
-                    # Display separate window for each camera feed
 
-            if frames: 
-                # Create all the frames to be same height
+            if frames:
                 target_h = min(f.shape[0] for f in frames)
                 resized = []
-                for f in frames:
+                for i, f in enumerate(frames):
                     h, w = f.shape[:2]
-                    new_w = int(w*target_h/h)
-                    resized.append(cv2.resize(f, (new_w, target_h)))
-                    
+                    new_w = int(w * target_h / h)
+                    resized_f = cv2.resize(f, (new_w, target_h))
+                    cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                    resized.append(resized_f)
+
                 combined = np.hstack(resized)
                 cv2.imshow("All cameras", combined)
-        
+
             key = cv2.waitKey(1) & 0xFF
 
             # Quit on ESC, Capture on SPACE
             if key == 27: # esc
                 break
             elif key == 32: # space
-                # Iterate through the frames 
+                # Iterate through the frames
                 for i, frame in enumerate(frames):
                     if frame is not None:
                         cam_id = camera_ids[i]
                         filename = f"{folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
                         cv2.imwrite(filename, frame)
 
+                if target_h:
+                    flash_green(capture_list, camera_ids, target_h)
                 print(f"--- Capture set {count_img} complete ---\n")
                 count_img += 1
             
