@@ -108,7 +108,7 @@ def start_capture():
 
     # Collect all serial numbers before opening the camera so the operator
     # isn't interrupted mid-session by terminal prompts
-    print("\nEnter serial numbers one per line. Leave blank when done (or leave all blank to skip):")
+    print("\nEnter serial numbers one per line. Use ENTER again when done: ")
     serial_numbers = []
     while True:
         sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
@@ -119,7 +119,7 @@ def start_capture():
     if serial_numbers:
         print(f"{len(serial_numbers)} serial number(s) queued.")
     else:
-        print("No serial numbers entered. Captures will be saved without SN.")
+        print("No serial numbers entered. Captures will start and save without SN.")
 
     total = len(serial_numbers)
     sn_index = 0       # tracks which SN in the queue is currently active
