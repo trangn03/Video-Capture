@@ -4,7 +4,7 @@ A tool for capturing images from one or more connected cameras simultaneously. D
 
 ## Features
 
-- Detects all connected cameras (up to 5)
+- Detects all connected cameras (up to 10)
 - Displays live feeds from all cameras side-by-side in a single window
 - Captures from every camera at once with a single keypress
 - Organizes saved images into folders by part number and job number
@@ -42,6 +42,7 @@ Images are saved to: `<PART_NUMBER>/JOB_<JOB_NUMBER>/`
 | Key     | Action                            |
 |---------|-----------------------------------|
 | `SPACE` | Capture a photo from all cameras  |
+| `R`     | Retake (discard the last capture) |
 | `ESC`   | Quit                              |
 
 ## Output

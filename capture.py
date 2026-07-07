@@ -122,11 +122,12 @@ def start_capture():
         print("No serial numbers entered. Captures will start and save without SN.")
 
     total = len(serial_numbers)
-    sn_index = 0       # tracks which SN in the queue is currently active
-    target_h = None    # shared display height across all camera feeds
-    prev_cam_count = 0 # used to detect camera connect/disconnect events
+    sn_index = 0        # tracks which SN in the queue is currently active
+    target_h = None     # shared display height across all camera feeds
+    prev_cam_count = 0  # used to detect camera connect/disconnect events
+    last_capture = None # info needed to undo the most recent capture set
 
-    print("\n[SPACE] to Capture | [ESC] to Quit")
+    print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit")
 
     try:
         while True:
@@ -144,8 +145,10 @@ def start_capture():
                 target_h = min(f.shape[0] for f in frames) if frames else None
                 prev_cam_count = len(frames)
 
+            queue_done = serial_numbers and sn_index >= total
+
             if frames:
-                current_sn = serial_numbers[sn_index] if serial_numbers else None
+                current_sn = serial_numbers[sn_index] if serial_numbers and not queue_done else None
                 resized = []
                 for i, f in enumerate(frames):
                     # Scale each frame to the shared target height, preserving aspect ratio
@@ -161,6 +164,9 @@ def start_capture():
                     if current_sn:
                         cv2.putText(resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
                                     (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    elif queue_done:
+                        cv2.putText(resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
+                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                     resized.append(resized_f)
 
                 # Stack all camera feeds side by side into one window
@@ -169,10 +175,17 @@ def start_capture():
 
             key = cv2.waitKey(1) & 0xFF
 
+            # Detect the window being closed via the title bar's X button
+            if frames and cv2.getWindowProperty("All cameras", cv2.WND_PROP_VISIBLE) < 1:
+                break
+
             if key == 27:  # ESC — exit session
                 break
+            elif key == 32 and queue_done:  # SPACE — no SN left to capture for
+                print("All serial numbers captured. Press R to retake the last set or ESC to finish.")
             elif key == 32:  # SPACE — save current frames
                 current_sn = serial_numbers[sn_index] if serial_numbers else None
+                saved_files = []
                 for i, frame in enumerate(frames):
                     cam_id = camera_ids[i]
                     # Include SN in filename only when one is active
@@ -181,20 +194,35 @@ def start_capture():
                     else:
                         filename = f"{folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
                     cv2.imwrite(filename, frame)
+                    saved_files.append(filename)
 
                 if target_h:
                     flash_capture(capture_list, camera_ids, target_h)
 
                 sn_info = f" | SN: {current_sn}" if current_sn else ""
                 print(f"--- Capture set {count_img}{sn_info} complete ---")
+
+                # Remember this capture so it can be undone with [R]
+                last_capture = {"files": saved_files, "count_img": count_img, "sn_index": sn_index}
                 count_img += 1
 
-                # Go to the next SN; stop automatically when the queue is empty
+                # Go to the next SN; wait for ESC (or R to retake) once the queue is empty
                 if serial_numbers:
                     sn_index += 1
                     if sn_index >= total:
-                        print("\nAll serial numbers captured.")
-                        break
+                        print("\nAll serial numbers captured. Press R to retake the last set or ESC to finish.")
+            elif key in (ord('r'), ord('R')):  # R — retake the last capture set
+                if last_capture is None:
+                    print("Nothing to retake.")
+                else:
+                    for f in last_capture["files"]:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    count_img = last_capture["count_img"]
+                    if serial_numbers:
+                        sn_index = last_capture["sn_index"]
+                    print(f"--- Capture set {count_img} discarded. Ready to retake. ---")
+                    last_capture = None
 
     finally:
         # Release cameras and close windows, even if the session crashed
