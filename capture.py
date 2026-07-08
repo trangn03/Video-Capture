@@ -12,12 +12,14 @@ import numpy as np
     Returns 1 if the folder is empty or has no matching files.
 """
 def find_existing_img(folder):
+    # Get a list of all files currently inside the folder 
     files = os.listdir(folder)
     numbers = []
     for f in files:
         # Match filenames ending in _<number>.jpg (the set counter)
         match = re.search(r'_(\d+)\.jpg$', f)
         if match:
+            # Convert the extracted string number into an integer and save it to our list
             numbers.append(int(match.group(1)))
     return max(numbers) + 1 if numbers else 1
 
@@ -33,14 +35,18 @@ def find_all_cameras(max_index=10):
 
     camera_ids = []
     captures = []
+    
     camera_api = cv2.CAP_DSHOW if os.name == 'nt' else cv2.CAP_ANY
+    
     for i in range(max_index):
         cap = cv2.VideoCapture(i, camera_api)
         if cap.isOpened():
+            # If sucessful, record the ID and keep the stream open
             camera_ids.append(i)
             captures.append(cap)  # keep open for the session
             print(f"Camera {i} ... connected.")
         else:
+            # Release the memory if no camera was found at this index
             cap.release()
 
     print(f"There are {len(camera_ids)} available camera(s) ready to take picture")
@@ -50,10 +56,13 @@ def find_all_cameras(max_index=10):
 Display grid layer for the camera 
 """
 def grid_layer_camera(frames):
+    # If no cameras are connected, do nothing to avoid crashing
     if not frames:
         return None
     # Count how many camera during the capture session
     num_frames = len(frames)
+    # Calculate the square dimension
+    # ceil() to round up the nearest whole number 
     cols = math.ceil(math.sqrt(num_frames))
     rows = math.ceil(num_frames / cols)
     
@@ -66,10 +75,15 @@ def grid_layer_camera(frames):
     # adding placeholder to the end of the list 
     while len(frames) < rows * cols:
         frames.append(placeholder_frames)
+    
+    # Create the grid one row at a time
     grid_rows = [] 
     for r in range(rows):
+        # Array Slicing: Grabs a chunk of images from the list.
+        # Example for 3 columns: Row 0 grabs indices 0 to 3. Row 1 grabs 3 to 6.
         row_frames = frames[r * cols: (r+1) * cols]
         grid_rows.append(np.hstack(row_frames))
+    # Vertical stack - top to bottom
     return np.vstack(grid_rows)
 
 """
@@ -86,19 +100,23 @@ def flash_capture(capture_list, camera_ids, target_h):
         if frames:
             resized = []
             for i, f in enumerate(frames):
+                # Calculate new width while strictly preserving the ratio
                 h, w = f.shape[:2]
                 new_w = int(w * target_h / h)
                 resized_f = cv2.resize(f, (new_w, target_h))
-                # Solid yellow rectangle over the frame 
+                # Solid yellow rectangle over the frame
+                # Create a copy of the image to act as blank canvas 
                 overlay = resized_f.copy()
                 cv2.rectangle(overlay, (0, 0), (new_w, target_h), (0, 255, 255), -1)
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
+                # Display the camera ID onto the flashed frame
                 cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 resized.append(resized_f)
+            # Display the grid
             combined = grid_layer_camera(resized)
             if combined is not None: 
-                cv2.imshow("All camera", combined)
+                cv2.imshow("All cameras", combined)
             cv2.waitKey(30)
 
 """
@@ -113,6 +131,7 @@ def start_capture():
 
     print("Capture begin...This may take a moment")
 
+    # Initialize the camera
     camera_ids, capture_list = find_all_cameras(10)
     if not camera_ids:
         print("Error: Couldn't detect any camera. Please check the connection and try again.")
@@ -140,11 +159,11 @@ def start_capture():
     # isn't interrupted mid-session by terminal prompts
     print("\nEnter serial numbers one per line. Use ENTER again when done: ")
     serial_numbers = []
-    seen_sns = set()
+    seen_sns = set() # A Set function is used to check for duplicate inputs
     while True:
         sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
         if not sn:
-            break
+            break # Exit loop if the user hit ENTER 
         if sn in seen_sns:
             print(f"  ! '{sn}' already in the list — please enter again.")
             continue
@@ -179,12 +198,14 @@ def start_capture():
 
             # Recalculate display height only when the number of active cameras changes
             if len(frames) != prev_cam_count:
+                # Find teh smallest height among all cameras to use as the baseline
                 target_h = min(f.shape[0] for f in frames) if frames else None
                 prev_cam_count = len(frames)
-
+            # Check if we have processed all the typed-in serial numbers
             queue_done = serial_numbers and sn_index >= total
 
             if frames:
+                # Determine which SN to display on the screen
                 current_sn = serial_numbers[sn_index] if serial_numbers and not queue_done else None
                 resized = []
                 for i, f in enumerate(frames):
@@ -206,7 +227,7 @@ def start_capture():
                                     (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                     resized.append(resized_f)
 
-                # Stack all camera feeds side by side into one window
+                # Stack all camera feeds into grid layer
                 combined = grid_layer_camera(resized)
                 if combined is not None:
                     cv2.imshow("All cameras", combined)
@@ -233,7 +254,8 @@ def start_capture():
                         filename = f"{folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
                     cv2.imwrite(filename, frame)
                     saved_files.append(filename)
-
+                    
+                # Trigger the flashing effect confirmation
                 if target_h:
                     flash_capture(capture_list, camera_ids, target_h)
 
@@ -253,13 +275,16 @@ def start_capture():
                 if last_capture is None:
                     print("Nothing to retake.")
                 else:
+                    # Delete the previous images from the hard drive 
                     for f in last_capture["files"]:
                         if os.path.exists(f):
                             os.remove(f)
+                    # Roll back the variables to match the state before the capture was taken
                     count_img = last_capture["count_img"]
                     if serial_numbers:
                         sn_index = last_capture["sn_index"]
                     print(f"--- Capture set {count_img} discarded. Ready to retake. ---")
+                    # Clear the history so there is no double-undo 
                     last_capture = None
 
     finally:
