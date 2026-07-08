@@ -2,6 +2,7 @@ import os
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  # suppress OpenCV console noise
 import cv2
 import re
+import math
 import numpy as np
 
 """
@@ -46,6 +47,32 @@ def find_all_cameras(max_index=10):
     return camera_ids, captures
 
 """
+Display grid layer for the camera 
+"""
+def grid_layer_camera(frames):
+    if not frames:
+        return None
+    # Count how many camera during the capture session
+    num_frames = len(frames)
+    cols = math.ceil(math.sqrt(num_frames))
+    rows = math.ceil(num_frames / cols)
+    
+    # Looks at the very first camera in the list
+    # then takes its dimension (height, width) and generates a brand new image of the exact same size,
+    # but filled entirely with zeros. We will have a sized black square
+    placeholder_frames = np.zeros_like(frames[0])
+    
+    # Padding the grid, fewer image > grid slots 
+    # adding placeholder to the end of the list 
+    while len(frames) < rows * cols:
+        frames.append(placeholder_frames)
+    grid_rows = [] 
+    for r in range(rows):
+        row_frames = frames[r * cols: (r+1) * cols]
+        grid_rows.append(np.hstack(row_frames))
+    return np.vstack(grid_rows)
+
+"""
     Display yellow flash across all camera feeds to confirm a shot was taken.
 """
 def flash_capture(capture_list, camera_ids, target_h):
@@ -69,8 +96,9 @@ def flash_capture(capture_list, camera_ids, target_h):
                 cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 resized.append(resized_f)
-            combined = np.hstack(resized)
-            cv2.imshow("All cameras", combined)
+            combined = grid_layer_camera(resized)
+            if combined is not None: 
+                cv2.imshow("All camera", combined)
             cv2.waitKey(30)
 
 """
@@ -135,6 +163,8 @@ def start_capture():
     last_capture = None # info needed to undo the most recent capture set
 
     print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit")
+    
+    cv2.namedWindow("All cameras", cv2.WINDOW_NORMAL)
 
     try:
         while True:
@@ -177,8 +207,9 @@ def start_capture():
                     resized.append(resized_f)
 
                 # Stack all camera feeds side by side into one window
-                combined = np.hstack(resized)
-                cv2.imshow("All cameras", combined)
+                combined = grid_layer_camera(resized)
+                if combined is not None:
+                    cv2.imshow("All cameras", combined)
 
             key = cv2.waitKey(1) & 0xFF
 
