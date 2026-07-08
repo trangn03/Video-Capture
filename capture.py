@@ -104,6 +104,7 @@ def start_capture():
 
     # If images already exist in the folder, pick up numbering where it left off
     count_img = find_existing_img(folder)
+    start_img = count_img  # used in session summary to count only this session's captures
     if count_img > 1:
         print(f"Existing photo found. Resuming at img #{count_img}")
 
@@ -111,11 +112,16 @@ def start_capture():
     # isn't interrupted mid-session by terminal prompts
     print("\nEnter serial numbers one per line. Use ENTER again when done: ")
     serial_numbers = []
+    seen_sns = set()
     while True:
         sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
         if not sn:
             break
+        if sn in seen_sns:
+            print(f"  ! '{sn}' already in the list — please enter again.")
+            continue
         serial_numbers.append(sn)
+        seen_sns.add(sn)
 
     if serial_numbers:
         print(f"{len(serial_numbers)} serial number(s) queued.")
@@ -230,7 +236,26 @@ def start_capture():
         for cap in capture_list:
             cap.release()
         cv2.destroyAllWindows()
-        print(f"\nAll images are stored in: {os.path.abspath(folder)}")
+
+        # Session summary
+        total_captures = count_img - start_img
+        total_images = total_captures * len(camera_ids)
+        print("\n" + "=" * 40)
+        print("         SESSION SUMMARY")
+        print("=" * 40)
+        print(f"  Part Number : {part_number}")
+        print(f"  Job Number  : {job_number}")
+        print(f"  Capture Sets: {total_captures}")
+        print(f"  Images Saved: {total_images}")
+        if serial_numbers:
+            captured_sns = serial_numbers[:sn_index]
+            missed_sns = serial_numbers[sn_index:]
+            if captured_sns:
+                print(f"  SNs Captured: {', '.join(captured_sns)}")
+            if missed_sns:
+                print(f"  SNs Missed  : {', '.join(missed_sns)}")
+        print(f"  Saved To    : {os.path.abspath(folder)}")
+        print("=" * 40 + "\n")
 
 
 if __name__ == "__main__":
