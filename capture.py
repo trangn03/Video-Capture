@@ -32,8 +32,9 @@ def find_all_cameras(max_index=10):
 
     camera_ids = []
     captures = []
+    camera_api = cv2.CAP_DSHOW if os.name == 'nt' else cv2.CAP_ANY
     for i in range(max_index):
-        cap = cv2.VideoCapture(i, cv2.CAP_ANY)
+        cap = cv2.VideoCapture(i, camera_api)
         if cap.isOpened():
             camera_ids.append(i)
             captures.append(cap)  # keep open for the session
