@@ -89,34 +89,32 @@ def grid_layer_camera(frames):
 """
     Display yellow flash across all camera feeds to confirm a shot was taken.
 """
-def flash_capture(capture_list, camera_ids, target_h):
-
-    for _ in range(8):  # 8 frames * 30ms = ~240ms flash duration
+def flash_capture(capture_list, camera_ids, target_w, target_h):
+    for _ in range(8):  
         frames = []
         for cap in capture_list:
             ret, frame = cap.read()
             if ret:
                 frames.append(frame)
+                
         if frames:
             resized = []
             for i, f in enumerate(frames):
-                # Calculate new width while strictly preserving the ratio
-                h, w = f.shape[:2]
-                new_w = int(w * target_h / h)
-                resized_f = cv2.resize(f, (new_w, target_h))
-                # Solid yellow rectangle over the frame
-                # Create a copy of the image to act as blank canvas 
+                # Force the flash frame to the shared dimensions
+                resized_f = cv2.resize(f, (target_w, target_h))
+                
                 overlay = resized_f.copy()
-                cv2.rectangle(overlay, (0, 0), (new_w, target_h), (0, 255, 255), -1)
+                cv2.rectangle(overlay, (0, 0), (target_w, target_h), (0, 255, 255), -1)
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
-                # Display the camera ID onto the flashed frame
+                
                 cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 resized.append(resized_f)
-            # Display the grid
+                
             combined = grid_layer_camera(resized)
             if combined is not None: 
                 cv2.imshow("All cameras", combined)
+                
             cv2.waitKey(30)
 
 """
@@ -178,6 +176,7 @@ def start_capture():
     total = len(serial_numbers)
     sn_index = 0        # tracks which SN in the queue is currently active
     target_h = None     # shared display height across all camera feeds
+    target_w = None     # shared display width across all camera feeds
     prev_cam_count = 0  # used to detect camera connect/disconnect events
     last_capture = None # info needed to undo the most recent capture set
 
@@ -198,8 +197,9 @@ def start_capture():
 
             # Recalculate display height only when the number of active cameras changes
             if len(frames) != prev_cam_count:
-                # Find teh smallest height among all cameras to use as the baseline
+                # Find the smallest height among all cameras to use as the baseline
                 target_h = min(f.shape[0] for f in frames) if frames else None
+                target_w = min(f.shape[1] for f in frames) if frames else None
                 prev_cam_count = len(frames)
             # Check if we have processed all the typed-in serial numbers
             queue_done = serial_numbers and sn_index >= total
@@ -210,9 +210,9 @@ def start_capture():
                 resized = []
                 for i, f in enumerate(frames):
                     # Scale each frame to the shared target height, preserving aspect ratio
-                    h, w = f.shape[:2]
-                    new_w = int(w * target_h / h)
-                    resized_f = cv2.resize(f, (new_w, target_h))
+                    # h, w = f.shape[:2]
+                    # new_w = int(w * target_h / h)
+                    resized_f = cv2.resize(f, (target_w, target_h))
 
                     # Display camera label
                     cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
@@ -257,7 +257,7 @@ def start_capture():
                     
                 # Trigger the flashing effect confirmation
                 if target_h:
-                    flash_capture(capture_list, camera_ids, target_h)
+                    flash_capture(capture_list, camera_ids, target_w, target_h)
 
                 sn_info = f" | SN: {current_sn}" if current_sn else ""
                 print(f"--- Capture set {count_img}{sn_info} complete ---")
