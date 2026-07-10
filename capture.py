@@ -91,12 +91,17 @@ def grid_layer_camera(frames):
 """
 def flash_capture(capture_list, camera_ids, target_w, target_h):
     for _ in range(8):  
-        frames = []
+        # Trigger all camera shutters simultaneously
         for cap in capture_list:
-            ret, frame = cap.read()
+            cap.grab()
+
+        # Decode the captured frames sequentially
+        frames = []
+        for i, cap in enumerate(capture_list):
+            ret, frame = cap.retrieve()
             if ret:
                 frames.append(frame)
-                
+
         if frames:
             resized = []
             for i, f in enumerate(frames):
@@ -186,15 +191,19 @@ def start_capture():
 
     try:
         while True:
-            # Read one frame from each camera
+            # Trigger all camera shutters simultaneously
+            for cap in capture_list:
+                cap.grab()
+
+            # Decode the captured frames sequentially
             frames = []
             for i, cap in enumerate(capture_list):
-                ret, frame = cap.read()
+                ret, frame = cap.retrieve()
                 if ret:
                     frames.append(frame)
                 else:
-                    print(f"Warning: Camera {camera_ids[i]} failed to read frame.")
-
+                    print(f"Warning: Camera {camera_ids[i]} failed to retrieve frame.")
+            
             # Recalculate display height only when the number of active cameras changes
             if len(frames) != prev_cam_count:
                 # Find the smallest height among all cameras to use as the baseline
