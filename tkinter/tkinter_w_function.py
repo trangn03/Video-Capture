@@ -1,13 +1,29 @@
 import tkinter as tk
+from tkinter import messagebox
 
 class myGUI:
+    
     def __init__(self):
         self.root = tk.Tk()
         
+        self.menu = tk.Menu(self.root)
+        
+        self.filemenu = tk.Menu(self.menu, tearoff=0)
+        self.filemenu.add_command(label="Close", command=exit)
+        
+        self.actionmenu = tk.Menu(self.menu, tearoff=0)
+        self.actionmenu.add_command(label="Show Message", command=self.show_message)
+        
+        self.menu.add_cascade(menu=self.filemenu, label="File")
+        self.menu.add_cascade(menu=self.actionmenu, label="Action")
+        
+        self.root.config(menu=self.menu)
+                
         self.label = tk.Label(self.root, text ="Your message", font=('Arial', 18))
         self.label.pack(padx=10, pady=10)
         
         self.textbox = tk.Text(self.root, height=5, font=('Arial',18))
+        self.textbox.bind("<KeyPress>", self.shortcut)
         self.textbox.pack(padx=10, pady=10) 
         
         self.check_state = tk.IntVar() 
@@ -17,11 +33,30 @@ class myGUI:
               
         self.button = tk.Button(self.root, text="Show message", font=('Arial', 18), command=self.show_message)
         self.button.pack(padx=10, pady=10)
+        
+        self.clearbutton = tk.Button(self.root, text="Clear", font=('Arial', 18), command=self.clear)
+        self.clearbutton.pack(padx=10, pady=10)
               
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)       
         self.root.mainloop()
         
     def show_message(self): 
-        print(self.check_state.get())
-        
+        if self.check_state.get() == 0:
+            print(self.textbox.get('1.0', tk.END))
+        else:
+            messagebox.showinfo(title="Message", message=self.textbox.get('1.0', tk.END))
+     
+    def shortcut(self, event):
+        #print(event)
+        if event.state == 12 and event.keysym == "Return":
+            self.show_message()
+            
+    def on_closing(self):
+        if messagebox.askokcancel("Quit", "Do you want to quit?"):
+            self.root.destroy()
+            
+    def clear(self):
+        self.textbox.delete('1.0', tk.END)
+
 myGUI()
         

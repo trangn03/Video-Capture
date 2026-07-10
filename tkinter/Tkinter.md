@@ -1,11 +1,21 @@
 # Tkinter
 
 ## Basic Form
-1. Create window 
+1. Import
+   ```
+   import tkinter as tk
+   ```
+1. Initialization & Main Loop
+   ```
+   self.root = tk.Tk()
+   # ... widget set up 
+   self.root.mainloop()
+   ```
+2. Create window 
    ```
    root.geometry("500x500)
    ```
-2. Add title
+3. Add title
     ```
     root.title("My first GUI")
     ```
@@ -33,8 +43,24 @@
    ```
 5. CheckButton
    ```
+   self.check_state = tk.IntVar() 
+   self.check = tk.Checkbutton(self.root, text="Show Message", variable=self.check_state)
+
+   ```
+6. Menu
+   ```
+   self.menu = tk.Menu(self.root)
+   
+   self.filemenu = tk.Menu(self.menu, tearoff=0)
+   self.filemenu.add_command(label="Close", command=exit)
+   
+   self.menu.add_cascade(menu=self.filemenu, label="File")
+   self.root.config(menu=self.menu)
+   ```
+7. Event Binding
+   ```
    
    ```
-6. 
+8. 
 
    
