@@ -14,6 +14,7 @@ pip install opencv-python pyinstaller numpy
 
 echo [5/5] Creating the file...
 pyinstaller --onefile --console capture.py
+pyinstaller --onefile --windowed --name "Capture Dashboard" capture_gui.py
 
 echo DONE! 
 echo Your file is ready in the 'dist' folder.
