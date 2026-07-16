@@ -4,13 +4,13 @@ rd /s /q build
 rd /s /q dist
 
 echo [2/5] Activating Virtual Environment...
-call venv\Scripts\activate
+call .venv\Scripts\activate
 
 echo [3/5] Upgrading pip to the latest version...
 python -m pip install --upgrade pip
 
 echo [4/5] Installing requirements inside venv...
-pip install opencv-python pyinstaller
+pip install opencv-python pyinstaller numpy
 
 echo [5/5] Creating the file...
 pyinstaller --onefile --console capture.py

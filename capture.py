@@ -130,7 +130,7 @@ def flash_capture(capture_list, camera_ids, target_w, target_h):
       4. Open the live camera feed and wait for SPACE to capture or ESC to quit.
       5. Each SPACE press saves one image per camera and advances to the next SN.
 """
-def start_capture():
+def start_capture(part_number=None, job_number=None, serial_numbers=None):
 
     print("Capture begin...This may take a moment")
 
@@ -140,9 +140,11 @@ def start_capture():
         print("Error: Couldn't detect any camera. Please check the connection and try again.")
         return
 
-    # Input part number and job number for file path
-    part_number = input("Enter PART NUMBER: ").strip() or "UNKNOWN"
-    job_number = input("Enter JOB NUMBER: ").strip() or "TEMP"
+    # Input part number and job number for file path if not supplied by caller (e.g. the GUI)
+    if part_number is None:
+        part_number = input("Enter PART NUMBER: ").strip() or "UNKNOWN"
+    if job_number is None:
+        job_number = input("Enter JOB NUMBER: ").strip() or "TEMP"
 
     # Images are saved under: <PART_NUMBER>/JOB_<JOB_NUMBER>/
     folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
@@ -160,18 +162,28 @@ def start_capture():
 
     # Collect all serial numbers before opening the camera so the operator
     # isn't interrupted mid-session by terminal prompts
-    print("\nEnter serial numbers one per line. Use ENTER again when done: ")
-    serial_numbers = []
-    seen_sns = set() # A Set function is used to check for duplicate inputs
-    while True:
-        sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
-        if not sn:
-            break # Exit loop if the user hit ENTER 
-        if sn in seen_sns:
-            print(f"  ! '{sn}' already in the list — please enter again.")
-            continue
-        serial_numbers.append(sn)
-        seen_sns.add(sn)
+    if serial_numbers is None:
+        print("\nEnter serial numbers one per line. Use ENTER again when done: ")
+        serial_numbers = []
+        seen_sns = set() # A Set function is used to check for duplicate inputs
+        while True:
+            sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
+            if not sn:
+                break # Exit loop if the user hit ENTER
+            if sn in seen_sns:
+                print(f"  ! '{sn}' already in the list — please enter again.")
+                continue
+            serial_numbers.append(sn)
+            seen_sns.add(sn)
+    else:
+        # Caller (e.g. the GUI) already collected these — just dedupe while preserving order
+        seen_sns = set()
+        deduped = []
+        for sn in serial_numbers:
+            if sn not in seen_sns:
+                deduped.append(sn)
+                seen_sns.add(sn)
+        serial_numbers = deduped
 
     if serial_numbers:
         print(f"{len(serial_numbers)} serial number(s) queued.")
