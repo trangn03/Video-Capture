@@ -16,5 +16,5 @@ echo [5/5] Creating the file...
 pyinstaller --onefile --windowed --name capture_gui capture_gui.py
 
 echo DONE!
-echo Your file is ready.
+echo Your file is ready in the 'dist' folder.
 pause
