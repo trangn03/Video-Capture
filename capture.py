@@ -237,6 +237,17 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
     last_capture = None # info needed to undo the most recent capture set
     session_capture_sets = 0  # total capture sets taken this session, across all SNs
 
+    # The "All cameras" window is what's actually on screen during
+    # capture, so status messages are also shown there as a temporary banner.
+    status_message = ""
+    status_frames_left = 0
+
+    def notify (msg, frames=45):
+        nonlocal status_message, status_frames_left
+        print(msg)
+        status_message = msg
+        status_frames_left = frames
+
     print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit")
     
     cv2.namedWindow("All cameras", cv2.WINDOW_NORMAL)
@@ -291,6 +302,13 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 # Stack all camera feeds into grid layer
                 combined = grid_layer_camera(resized)
                 if combined is not None:
+                    # Draw the latest status message as a temporary banner across
+                    # the bottom of the window (the only visible surface in the GUI build)
+                    if status_frames_left > 0:
+                        banner_y = combined.shape[0] - 20
+                        cv2.putText(combined, status_message, (10, banner_y),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        status_frames_left -= 1
                     cv2.imshow("All cameras", combined)
 
             key = cv2.waitKey(1) & 0xFF
@@ -302,7 +320,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
             if key == 27:  # ESC — exit session
                 break
             elif key == 32 and queue_done:  # SPACE — no SN left to capture for
-                print("All serial numbers captured. Press R to retake the last set or ESC to finish.")
+                notify("All serial numbers captured. Press R to retake the last set or ESC to finish.")
             elif key == 32:  # SPACE — save current frames
                 current_sn = serial_numbers[sn_index] if serial_numbers else None
                 sn_folder = target_folder_for(current_sn)
@@ -323,7 +341,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                     flash_capture(capture_list, camera_ids, target_w, target_h)
 
                 sn_info = f" | SN: {current_sn}" if current_sn else ""
-                print(f"--- Capture set {count_img}{sn_info} complete ---")
+                notify(f"Capture set {count_img}{sn_info} complete")
 
                 # Remember this capture so it can be undone with [R]
                 used_set_number = qty_state["next_set"] if not current_sn and not serial_numbers else None
@@ -340,10 +358,10 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 if serial_numbers:
                     sn_index += 1
                     if sn_index >= total:
-                        print("\nAll serial numbers captured. Press R to retake the last set or ESC to finish.")
+                        notify("All serial numbers captured. Press R to retake the last set or ESC to finish.")
             elif key in (ord('r'), ord('R')):  # R — retake the last capture set
                 if last_capture is None:
-                    print("Nothing to retake.")
+                    notify("Nothing to retake.")
                 else:
                     # Delete the previous images from the hard drive
                     for f in last_capture["files"]:
@@ -355,7 +373,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                         qty_state["next_set"] = last_capture["set_number"]
                     if serial_numbers:
                         sn_index = last_capture["sn_index"]
-                    print(f"--- Capture set {last_capture['count_img']} discarded. Ready to retake. ---")
+                    notify(f"Capture set {last_capture['count_img']} discarded. Ready to retake.")
                     session_capture_sets -= 1
                     # Clear the history so there is no double-undo
                     last_capture = None

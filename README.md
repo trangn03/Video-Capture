@@ -7,8 +7,10 @@ A tool for capturing images from one or more connected cameras simultaneously. D
 - Detects all connected cameras (up to 10)
 - Displays live feeds from all cameras side-by-side in a single window
 - Captures from every camera at once with a single keypress
-- Organizes saved images into folders by part number and job number
+- Optional GUI ([capture_gui.py](capture_gui.py)) for entering part number, job number, and serial numbers without a terminal
+- Organizes saved images into folders by part number, job number, and serial number (or quantity, if no serial numbers are used)
 - Resumes numbering from where it left off if a session is interrupted
+- On-screen status banner (capture complete, retake, etc.) shown in the camera window itself, so status is visible even when run from the GUI build with no console
 
 ## Requirements
 
@@ -33,9 +35,14 @@ python capture.py
 You will be prompted to enter:
 
 - **Part Number** — used to name the top-level folder (defaults to `UNKNOWN`)
-- **Job Number** — used to name the subfolder (defaults to `TEMP`)
+- **Job Number** — used to name the job subfolder (defaults to `TEMP`)
+- **Serial Numbers** — one per line, ENTER on a blank line to finish (optional — leave blank to capture by quantity instead)
 
-Images are saved to: `<PART_NUMBER>/JOB_<JOB_NUMBER>/`
+Or run the GUI instead, which collects the same inputs from a window instead of the terminal:
+
+```bash
+python capture_gui.py
+```
 
 ### Controls
 
@@ -45,20 +52,39 @@ Images are saved to: `<PART_NUMBER>/JOB_<JOB_NUMBER>/`
 | `R`     | Retake (discard the last capture) |
 | `ESC`   | Quit                              |
 
+Status messages (capture complete, retake, queue finished, etc.) are shown both in the console and as a temporary banner across the bottom of the camera window, so they're visible even when running the GUI build with no console attached.
+
 ## Output
 
-Each capture set saves one image per camera:
+Each capture set saves one image per camera. Images are grouped into their own subfolder so you can jump straight to one serial number or quantity without scanning the whole job folder:
+
+**With serial numbers** — one folder per SN, under `SN_<serial>/`:
 
 ```text
 PART_<part_number>/
 └── JOB_<job_number>/
-    ├── PART_<part_number>_CAM0_1.jpg
-    ├── PART_<part_number>_CAM1_1.jpg
-    ├── PART_<part_number>_CAM0_2.jpg
-    └── ...
+    ├── SN_ABC123/
+    │   ├── PART_<part_number>_CAM0_SNABC123_1.jpg
+    │   └── PART_<part_number>_CAM1_SNABC123_1.jpg
+    └── SN_ABC124/
+        ├── PART_<part_number>_CAM0_SNABC124_1.jpg
+        └── PART_<part_number>_CAM1_SNABC124_1.jpg
 ```
 
-If images already exist in the folder, the counter picks up from the last image so existing files are never overwritten.
+**Without serial numbers** — one folder per quantity, under `SET_<n>/`:
+
+```text
+PART_<part_number>/
+└── JOB_<job_number>/
+    ├── SET_1/
+    │   ├── PART_<part_number>_CAM0_1.jpg
+    │   └── PART_<part_number>_CAM1_1.jpg
+    └── SET_2/
+        ├── PART_<part_number>_CAM0_1.jpg
+        └── PART_<part_number>_CAM1_1.jpg
+```
+
+If images already exist in a folder, the counter picks up from the last image so existing files are never overwritten.
 
 ## Building a Standalone Executable (Windows)
 
