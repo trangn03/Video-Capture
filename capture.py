@@ -24,6 +24,20 @@ def find_existing_img(folder):
     return max(numbers) + 1 if numbers else 1
 
 """
+    Scan the job folder for existing SET_<n> subfolders (used for quantities
+    captured without a serial number) and return the next available set number.
+
+    Returns 1 if no SET_ subfolders exist yet.
+"""
+def find_next_set_number(folder):
+    numbers = []
+    for name in os.listdir(folder):
+        match = re.fullmatch(r'SET_(\d+)', name)
+        if match and os.path.isdir(os.path.join(folder, name)):
+            numbers.append(int(match.group(1)))
+    return max(numbers) + 1 if numbers else 1
+
+"""
     Probe camera indices 0 through max_index-1 and return only the ones
     that successfully open.
 
@@ -146,7 +160,9 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
     if job_number is None:
         job_number = input("Enter JOB NUMBER: ").strip() or "TEMP"
 
-    # Images are saved under: <PART_NUMBER>/JOB_<JOB_NUMBER>/
+    # Images are saved under: <PART_NUMBER>/JOB_<JOB_NUMBER>/SN_<serial>/
+    # so that all images for one serial number live together and can be
+    # found without scanning the whole job folder.
     folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
     if not os.path.exists(folder):
         os.makedirs(folder)
@@ -154,11 +170,34 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
 
     print(f"\n Saving to: {os.path.abspath(folder)}")
 
-    # If images already exist in the folder, pick up numbering where it left off
-    count_img = find_existing_img(folder)
-    start_img = count_img  # used in session summary to count only this session's captures
-    if count_img > 1:
-        print(f"Existing photo found. Resuming at img #{count_img}")
+    # Per-folder image counters, keyed by the folder they're saved into.
+    # Populated lazily the first time each SN (or SET_<n>) folder is used,
+    # so numbering resumes correctly if that folder already has images.
+    img_counts = {}
+
+    # When no serial numbers were entered, each quantity gets its own
+    # SET_<n> folder instead of everything dumping into the job folder.
+    # next_set is None until the first no-SN capture, then tracks which
+    # SET_<n> folder the *next* capture should use.
+    qty_state = {"next_set": None}
+
+    def target_folder_for(sn):
+        if sn:
+            return os.path.join(folder, f"SN_{sn}")
+        if not serial_numbers:
+            if qty_state["next_set"] is None:
+                qty_state["next_set"] = find_next_set_number(folder)
+            return os.path.join(folder, f"SET_{qty_state['next_set']}")
+        return folder
+
+    def next_count(target_folder):
+        if target_folder not in img_counts:
+            if not os.path.exists(target_folder):
+                os.makedirs(target_folder)
+            img_counts[target_folder] = find_existing_img(target_folder)
+            if img_counts[target_folder] > 1:
+                print(f"Existing photos found in {target_folder}. Resuming at img #{img_counts[target_folder]}")
+        return img_counts[target_folder]
 
     # Collect all serial numbers before opening the camera so the operator
     # isn't interrupted mid-session by terminal prompts
@@ -196,6 +235,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
     target_w = None     # shared display width across all camera feeds
     prev_cam_count = 0  # used to detect camera connect/disconnect events
     last_capture = None # info needed to undo the most recent capture set
+    session_capture_sets = 0  # total capture sets taken this session, across all SNs
 
     print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit")
     
@@ -265,17 +305,19 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 print("All serial numbers captured. Press R to retake the last set or ESC to finish.")
             elif key == 32:  # SPACE — save current frames
                 current_sn = serial_numbers[sn_index] if serial_numbers else None
+                sn_folder = target_folder_for(current_sn)
+                count_img = next_count(sn_folder)
                 saved_files = []
                 for i, frame in enumerate(frames):
                     cam_id = camera_ids[i]
-                    # Include SN in filename only when one is active
+                    # Include SN in filename too, for extra safety if files get moved around
                     if current_sn:
-                        filename = f"{folder}/PART_{part_number}_CAM{cam_id}_SN{current_sn}_{count_img}.jpg"
+                        filename = f"{sn_folder}/PART_{part_number}_CAM{cam_id}_SN{current_sn}_{count_img}.jpg"
                     else:
-                        filename = f"{folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
+                        filename = f"{sn_folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
                     cv2.imwrite(filename, frame)
                     saved_files.append(filename)
-                    
+
                 # Trigger the flashing effect confirmation
                 if target_h:
                     flash_capture(capture_list, camera_ids, target_w, target_h)
@@ -284,8 +326,15 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 print(f"--- Capture set {count_img}{sn_info} complete ---")
 
                 # Remember this capture so it can be undone with [R]
-                last_capture = {"files": saved_files, "count_img": count_img, "sn_index": sn_index}
-                count_img += 1
+                used_set_number = qty_state["next_set"] if not current_sn and not serial_numbers else None
+                last_capture = {
+                    "files": saved_files, "folder": sn_folder, "count_img": count_img,
+                    "sn_index": sn_index, "set_number": used_set_number,
+                }
+                img_counts[sn_folder] = count_img + 1
+                if used_set_number is not None:
+                    qty_state["next_set"] += 1
+                session_capture_sets += 1
 
                 # Go to the next SN; wait for ESC (or R to retake) once the queue is empty
                 if serial_numbers:
@@ -296,16 +345,19 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 if last_capture is None:
                     print("Nothing to retake.")
                 else:
-                    # Delete the previous images from the hard drive 
+                    # Delete the previous images from the hard drive
                     for f in last_capture["files"]:
                         if os.path.exists(f):
                             os.remove(f)
                     # Roll back the variables to match the state before the capture was taken
-                    count_img = last_capture["count_img"]
+                    img_counts[last_capture["folder"]] = last_capture["count_img"]
+                    if last_capture["set_number"] is not None:
+                        qty_state["next_set"] = last_capture["set_number"]
                     if serial_numbers:
                         sn_index = last_capture["sn_index"]
-                    print(f"--- Capture set {count_img} discarded. Ready to retake. ---")
-                    # Clear the history so there is no double-undo 
+                    print(f"--- Capture set {last_capture['count_img']} discarded. Ready to retake. ---")
+                    session_capture_sets -= 1
+                    # Clear the history so there is no double-undo
                     last_capture = None
 
     finally:
@@ -315,7 +367,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
         cv2.destroyAllWindows()
 
         # Session summary
-        total_captures = count_img - start_img
+        total_captures = session_capture_sets
         total_images = total_captures * len(camera_ids)
         print("\n" + "=" * 40)
         print("         SESSION SUMMARY")
