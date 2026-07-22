@@ -35,16 +35,55 @@ class CaptureGUI:
         
         # Start the capture button
         self.btn_start = tk.Button (
-            self.root, 
+            self.root,
             text="Start Capture",
             font=text_font,
             bg="#4CAF50",
             fg="black",
+            command=self.on_start,   # run on_start() when clicked
         )
         self.btn_start.pack(padx=10, pady=10)
-        
+
         self.root.mainloop()
-        
+
+    def on_start(self):
+        # 1. Read the values the operator typed into the GUI
+        part_number = self.entry_part.get().strip()
+        job_number = self.entry_job.get().strip()
+
+        # The serial-number box is a multi-line Text widget. "1.0" = line 1, char 0;
+        # "end" = the very end. Grab everything, then trim the outer whitespace.
+        raw_sns = self.text_sn.get("1.0", "end").strip()
+
+        # Split that block into individual lines, clean each one, and skip blanks.
+        serial_numbers = []
+        for line in raw_sns.splitlines():
+            cleaned = line.strip()   # remove stray spaces around this serial number
+            if cleaned:              # empty string is falsy -> skip blank lines
+                serial_numbers.append(cleaned)
+
+        # 2. Basic validation so we don't start a session with empty IDs
+        if not part_number:
+            messagebox.showerror("Missing info", "Please enter a PART NUMBER.")
+            return
+        if not job_number:
+            messagebox.showerror("Missing info", "Please enter a JOB NUMBER.")
+            return
+
+        # 3. Hide the GUI while the OpenCV capture window runs on the main thread,
+        #    then bring the GUI back once the session ends (ESC / window closed).
+        self.root.withdraw()
+        try:
+            capture.start_capture(
+                part_number=part_number,
+                job_number=job_number,
+                serial_numbers=serial_numbers,
+            )
+        except Exception as e:
+            messagebox.showerror("Capture error", str(e))
+        finally:
+            self.root.destroy()
+
 
 if __name__ == "__main__":
     CaptureGUI()
