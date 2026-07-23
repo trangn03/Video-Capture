@@ -70,6 +70,23 @@ class CaptureGUI:
             messagebox.showerror("Missing info", "Please enter a JOB NUMBER.")
             return
 
+        # Flag duplicate serial numbers so the operator can fix them before
+        # capture starts (capture.py would otherwise dedupe them silently).
+        seen_sns = set()
+        duplicate_sns = []
+        for sn in serial_numbers:
+            if sn in seen_sns and sn not in duplicate_sns:
+                duplicate_sns.append(sn)
+            seen_sns.add(sn)
+        if duplicate_sns:
+            messagebox.showerror(
+                "Duplicate serial number(s)",
+                "The following serial number(s) were entered more than once:\n\n"
+                + "\n".join(duplicate_sns)
+                + "\n\nPlease remove the duplicate(s) and try again.",
+            )
+            return
+
         # 3. Hide the GUI while the OpenCV capture window runs on the main thread,
         #    then bring the GUI back once the session ends (ESC / window closed).
         self.root.withdraw()
