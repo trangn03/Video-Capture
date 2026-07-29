@@ -73,6 +73,8 @@ def grid_layer_camera(frames):
     # If no cameras are connected, do nothing to avoid crashing
     if not frames:
         return None
+    # Work on a copy so don't mutate the caller's list when padding
+    frames = list(frames)
     # Count how many camera during the capture session
     num_frames = len(frames)
     # Calculate the square dimension
@@ -109,24 +111,25 @@ def flash_capture(capture_list, camera_ids, target_w, target_h):
         for cap in capture_list:
             cap.grab()
 
-        # Decode the captured frames sequentially
+        # Decode the captured frames sequentially, keeping each frame paired
+        # with its camera id so labels stay correct even if a camera drops out
         frames = []
         for i, cap in enumerate(capture_list):
             ret, frame = cap.retrieve()
             if ret:
-                frames.append(frame)
+                frames.append((camera_ids[i], frame))
 
         if frames:
             resized = []
-            for i, f in enumerate(frames):
+            for cam_id, f in frames:
                 # Force the flash frame to the shared dimensions
                 resized_f = cv2.resize(f, (target_w, target_h))
-                
+
                 overlay = resized_f.copy()
                 cv2.rectangle(overlay, (0, 0), (target_w, target_h), (0, 255, 255), -1)
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
-                
-                cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
+
+                cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 resized.append(resized_f)
                 
@@ -258,20 +261,22 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
             for cap in capture_list:
                 cap.grab()
 
-            # Decode the captured frames sequentially
+            # Decode the captured frames sequentially, keeping each frame paired
+            # with its camera id so labels/filenames stay correct even if a
+            # camera in the middle of the list fails to retrieve.
             frames = []
             for i, cap in enumerate(capture_list):
                 ret, frame = cap.retrieve()
                 if ret:
-                    frames.append(frame)
+                    frames.append((camera_ids[i], frame))
                 else:
                     print(f"Warning: Camera {camera_ids[i]} failed to retrieve frame.")
-            
+
             # Recalculate display height only when the number of active cameras changes
             if len(frames) != prev_cam_count:
                 # Find the smallest height among all cameras to use as the baseline
-                target_h = min(f.shape[0] for f in frames) if frames else None
-                target_w = min(f.shape[1] for f in frames) if frames else None
+                target_h = min(f.shape[0] for _, f in frames) if frames else None
+                target_w = min(f.shape[1] for _, f in frames) if frames else None
                 prev_cam_count = len(frames)
             # Check if we have processed all the typed-in serial numbers
             queue_done = serial_numbers and sn_index >= total
@@ -280,14 +285,14 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 # Determine which SN to display on the screen
                 current_sn = serial_numbers[sn_index] if serial_numbers and not queue_done else None
                 resized = []
-                for i, f in enumerate(frames):
+                for cam_id, f in frames:
                     # Scale each frame to the shared target height, preserving aspect ratio
                     # h, w = f.shape[:2]
                     # new_w = int(w * target_h / h)
                     resized_f = cv2.resize(f, (target_w, target_h))
 
                     # Display camera label
-                    cv2.putText(resized_f, f"CAM {camera_ids[i]}", (10, 30),
+                    cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
                     # Display current SN and queue progress if serial numbers were entered
@@ -326,22 +331,30 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 sn_folder = target_folder_for(current_sn)
                 count_img = next_count(sn_folder)
                 saved_files = []
-                for i, frame in enumerate(frames):
-                    cam_id = camera_ids[i]
+                write_failed = False
+                for cam_id, frame in frames:
                     # Include SN in filename too, for extra safety if files get moved around
                     if current_sn:
-                        filename = f"{sn_folder}/PART_{part_number}_CAM{cam_id}_SN{current_sn}_{count_img}.jpg"
+                        filename = os.path.join(
+                            sn_folder, f"PART_{part_number}_CAM{cam_id}_SN{current_sn}_{count_img}.jpg")
                     else:
-                        filename = f"{sn_folder}/PART_{part_number}_CAM{cam_id}_{count_img}.jpg"
-                    cv2.imwrite(filename, frame)
-                    saved_files.append(filename)
+                        filename = os.path.join(
+                            sn_folder, f"PART_{part_number}_CAM{cam_id}_{count_img}.jpg")
+                    if cv2.imwrite(filename, frame):
+                        saved_files.append(filename)
+                    else:
+                        write_failed = True
+                        print(f"Error: failed to save {filename}")
 
                 # Trigger the flashing effect confirmation
                 if target_h:
                     flash_capture(capture_list, camera_ids, target_w, target_h)
 
-                sn_info = f" | SN: {current_sn}" if current_sn else ""
-                notify(f"Capture set {count_img}{sn_info} complete")
+                if write_failed:
+                    notify(f"WARNING: some images failed to save for set {count_img}")
+                else:
+                    sn_info = f" | SN: {current_sn}" if current_sn else ""
+                    notify(f"Capture set {count_img}{sn_info} complete")
 
                 # Remember this capture so it can be undone with [R]
                 used_set_number = qty_state["next_set"] if not current_sn and not serial_numbers else None
