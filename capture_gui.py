@@ -31,8 +31,15 @@ class CaptureGUI:
         self.label_sn.pack(padx=10, pady=10)
         
         self.text_sn = tk.Text(self.root, height = 5, width=30, font=text_font)
-        self.text_sn.pack(padx=10, pady=10)
-        
+        self.text_sn.pack(padx=10, pady=(10, 0))
+        # Update the counter each time the operator types in the serial box
+        self.text_sn.bind("<KeyRelease>", self.update_sn_counter)
+
+        # Live count of how many serial numbers are currently entered
+        self.label_sn_count = tk.Label(self.root, text="0 serial number(s) entered",
+                                       font=font.Font(family="Segoe UI", size=11))
+        self.label_sn_count.pack(padx=10, pady=(2, 10))
+
         # Start the capture button
         self.btn_start = tk.Button (
             self.root,
@@ -45,6 +52,18 @@ class CaptureGUI:
         self.btn_start.pack(padx=10, pady=10)
 
         self.root.mainloop()
+
+    def update_sn_counter(self, event=None):
+        # Show a running total of how many serial numbers are entered
+        raw = self.text_sn.get("1.0", "end")   # everything typed in the box
+
+        # Count each line that actually has text, skipping blank lines
+        count = 0
+        for line in raw.splitlines():
+            if line.strip():   # line has something other than spaces
+                count += 1
+
+        self.label_sn_count.config(text=f"{count} serial number(s) entered")
 
     def on_start(self):
         # 1. Read the values the operator typed into the GUI
