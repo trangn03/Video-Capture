@@ -50,7 +50,7 @@ python capture_gui.py
 |---------|-----------------------------------|
 | `SPACE` | Capture a photo from all cameras  |
 | `R`     | Retake (discard the last capture) |
-| `ESC`   | Quit                              |
+| `ESC`   | Quit (press again to confirm)     |
 
 Status messages (capture complete, retake, queue finished, etc.) are shown both in the console and as a temporary banner across the bottom of the camera window, so they're visible even when running the GUI build with no console attached.
 

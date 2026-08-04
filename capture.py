@@ -239,6 +239,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
     prev_cam_count = 0  # used to detect camera connect/disconnect events
     last_capture = None # info needed to undo the most recent capture set
     session_capture_sets = 0  # total capture sets taken this session, across all SNs
+    confirm_quit = False # true while waiting on the operator to confirm ESC
 
     # The "All cameras" window is what's actually on screen during
     # capture, so status messages are also shown there as a temporary banner.
@@ -251,7 +252,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
         status_message = msg
         status_frames_left = frames
 
-    print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit")
+    print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit (press twice to confirm)")
     
     cv2.namedWindow("All cameras", cv2.WINDOW_NORMAL)
 
@@ -307,10 +308,15 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 # Stack all camera feeds into grid layer
                 combined = grid_layer_camera(resized)
                 if combined is not None:
-                    # Draw the latest status message as a temporary banner across
-                    # the bottom of the window (the only visible surface in the GUI build)
-                    if status_frames_left > 0:
-                        banner_y = combined.shape[0] - 20
+                    banner_y = combined.shape[0] - 20
+                    if confirm_quit:
+                        # Persistent prompt overrides the normal status banner
+                        # until the operator confirms or cancels the quit.
+                        cv2.putText(combined, "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
+                                    (10, banner_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    elif status_frames_left > 0:
+                        # Draw the latest status message as a temporary banner across
+                        # the bottom of the window (the only visible surface in the GUI build)
                         cv2.putText(combined, status_message, (10, banner_y),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                         status_frames_left -= 1
@@ -322,8 +328,18 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
             if frames and cv2.getWindowProperty("All cameras", cv2.WND_PROP_VISIBLE) < 1:
                 break
 
-            if key == 27:  # ESC — exit session
-                break
+            if confirm_quit:
+                # Any real keypress resolves the prompt: ESC confirms, anything
+                # else cancels and resumes the session without side effects.
+                if key == 27:
+                    break
+                elif key != 255:
+                    confirm_quit = False
+                    notify("Quit cancelled. Continuing capture.")
+                continue
+
+            if key == 27:  # ESC — ask for confirmation before quitting
+                confirm_quit = True
             elif key == 32 and queue_done:  # SPACE — no SN left to capture for
                 notify("All serial numbers captured. Press R to retake the last set or ESC to finish.")
             elif key == 32:  # SPACE — save current frames
@@ -416,6 +432,11 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 print(f"  SNs Missed  : {', '.join(missed_sns)}")
         print(f"  Saved To    : {os.path.abspath(folder)}")
         print("=" * 40 + "\n")
+
+        # Open the output folder in File Explorer so the operator can verify
+        # the images right away, without hunting for the path themselves.
+        if total_captures > 0 and os.name == 'nt':
+            os.startfile(os.path.abspath(folder))
 
 
 if __name__ == "__main__":
