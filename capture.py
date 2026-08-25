@@ -46,7 +46,6 @@ def find_next_set_number(folder):
         captures   (list[cv2.VideoCapture]): already-open capture objects
 """
 def find_all_cameras(max_index=10):
-
     camera_ids = []
     captures = []
     
@@ -55,12 +54,21 @@ def find_all_cameras(max_index=10):
     for i in range(max_index):
         cap = cv2.VideoCapture(i, camera_api)
         if cap.isOpened():
-            # If sucessful, record the ID and keep the stream open
+            # 1. Force MJPEG compression to prevent USB bandwidth saturation
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            
+            # 2. Request full 4K UHD resolution
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+            
+            # Verify actual resolution accepted by hardware
+            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
             camera_ids.append(i)
-            captures.append(cap)  # keep open for the session
-            print(f"Camera {i} ... connected.")
+            captures.append(cap)
+            print(f"Camera {i} connected at {actual_w}x{actual_h}")
         else:
-            # Release the memory if no camera was found at this index
             cap.release()
 
     print(f"There are {len(camera_ids)} available camera(s) ready to take picture")
