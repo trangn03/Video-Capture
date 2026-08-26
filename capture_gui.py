@@ -57,7 +57,7 @@ class CaptureGUI:
         # -------------------------------------------------------------
         self.cam_card = tk.LabelFrame(
             main_frame,
-            text=" Camera Hardware Status ",
+            text=" Camera Status ",
             font=self.font_small,
             padx=12,
             pady=10,
