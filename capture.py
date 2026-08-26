@@ -75,6 +75,20 @@ def find_all_cameras(max_index=10):
     return camera_ids, captures
 
 """
+    Quickly probe connected cameras and their resolutions without holding
+    the capture devices open. Ideal for GUI pre-flight status checks.
+"""
+def detect_cameras(max_index=10):
+    camera_ids, captures = find_all_cameras(max_index)
+    results = []
+    for cam_id, cap in zip(camera_ids, captures):
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        results.append({"id": cam_id, "width": w, "height": h})
+        cap.release()
+    return results
+
+"""
     Calculate optimal grid rows, columns, and individual cell preview dimensions
     so the combined layout fits comfortably on screen without distorting aspect ratios.
 """
