@@ -75,45 +75,114 @@ def find_all_cameras(max_index=10):
     return camera_ids, captures
 
 """
-Display grid layer for the camera 
+    Calculate optimal grid rows, columns, and individual cell preview dimensions
+    so the combined layout fits comfortably on screen without distorting aspect ratios.
 """
-def grid_layer_camera(frames):
+def compute_grid_dimensions(num_cameras, frame_w, frame_h, max_total_w=1400, max_total_h=800):
+    if num_cameras <= 0:
+        return 1, 1, frame_w, frame_h
+    
+    if num_cameras == 1:
+        rows, cols = 1, 1
+    elif num_cameras == 2:
+        # For 2 cameras, side-by-side if landscape/square, stacked if portrait
+        if frame_w >= frame_h:
+            rows, cols = 1, 2
+        else:
+            rows, cols = 2, 1
+    elif num_cameras <= 4:
+        rows, cols = 2, 2
+    elif num_cameras <= 6:
+        rows, cols = 2, 3
+    elif num_cameras <= 9:
+        rows, cols = 3, 3
+    else:
+        cols = math.ceil(math.sqrt(num_cameras))
+        rows = math.ceil(num_cameras / cols)
+    
+    # Calculate cell preview size to fit within max_total_w x max_total_h
+    scale_w = max_total_w / (cols * frame_w)
+    scale_h = max_total_h / (rows * frame_h)
+    scale = min(1.0, scale_w, scale_h)  # Do not upscale past native resolution
+    
+    cell_w = max(160, int(frame_w * scale))
+    cell_h = max(120, int(frame_h * scale))
+    
+    return rows, cols, cell_w, cell_h
+
+"""
+    Draw a semi-transparent HUD badge with anti-aliased text for crisp readability.
+"""
+def draw_hud_badge(img, text, pos, font_scale=0.7, font_thick=2, text_color=(0, 255, 255), bg_color=(20, 20, 20), alpha=0.65):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw, th), baseline = cv2.getTextSize(text, font, font_scale, font_thick)
+    x, y = pos
+    pad = 4
+    x1, y1 = max(0, x - pad), max(0, y - th - pad)
+    x2, y2 = min(img.shape[1], x + tw + pad), min(img.shape[0], y + baseline + pad)
+    
+    if x2 > x1 and y2 > y1:
+        overlay = img[y1:y2, x1:x2].copy()
+        box = np.full_like(overlay, bg_color)
+        img[y1:y2, x1:x2] = cv2.addWeighted(box, alpha, overlay, 1 - alpha, 0)
+        
+    cv2.putText(img, text, (x, y), font, font_scale, text_color, font_thick, cv2.LINE_AA)
+
+"""
+    Display responsive grid layer for the camera feeds with clean cell borders.
+"""
+def grid_layer_camera(frames, rows=None, cols=None, border_thickness=2, border_color=(40, 40, 40)):
     # If no cameras are connected, do nothing to avoid crashing
     if not frames:
         return None
-    # Work on a copy so don't mutate the caller's list when padding
     frames = list(frames)
-    # Count how many camera during the capture session
     num_frames = len(frames)
-    # Calculate the square dimension
-    # ceil() to round up the nearest whole number 
-    cols = math.ceil(math.sqrt(num_frames))
-    rows = math.ceil(num_frames / cols)
     
-    # Looks at the very first camera in the list
-    # then takes its dimension (height, width) and generates a brand new image of the exact same size,
-    # but filled entirely with zeros. We will have a sized black square
-    placeholder_frames = np.zeros_like(frames[0])
+    if rows is None or cols is None:
+        cols = math.ceil(math.sqrt(num_frames))
+        rows = math.ceil(num_frames / cols)
     
-    # Padding the grid, fewer image > grid slots 
-    # adding placeholder to the end of the list 
+    # Create empty placeholder slot if needed
+    h, w = frames[0].shape[:2]
+    placeholder_frame = np.zeros((h, w, 3), dtype=np.uint8)
+    cv2.putText(placeholder_frame, "No Camera", (max(10, w // 2 - 50), max(20, h // 2)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 80, 80), 1, cv2.LINE_AA)
+    
     while len(frames) < rows * cols:
-        frames.append(placeholder_frames)
+        frames.append(placeholder_frame)
     
-    # Create the grid one row at a time
     grid_rows = [] 
     for r in range(rows):
-        # Array Slicing: Grabs a chunk of images from the list.
-        # Example for 3 columns: Row 0 grabs indices 0 to 3. Row 1 grabs 3 to 6.
-        row_frames = frames[r * cols: (r+1) * cols]
-        grid_rows.append(np.hstack(row_frames))
-    # Vertical stack - top to bottom
-    return np.vstack(grid_rows)
+        row_frames = frames[r * cols: (r + 1) * cols]
+        # Add subtle vertical border between cells
+        if border_thickness > 0 and len(row_frames) > 1:
+            row_with_borders = []
+            v_border = np.full((h, border_thickness, 3), border_color, dtype=np.uint8)
+            for idx, cell in enumerate(row_frames):
+                row_with_borders.append(cell)
+                if idx < len(row_frames) - 1:
+                    row_with_borders.append(v_border)
+            grid_rows.append(np.hstack(row_with_borders))
+        else:
+            grid_rows.append(np.hstack(row_frames))
+
+    # Add horizontal border between rows
+    if border_thickness > 0 and len(grid_rows) > 1:
+        grid_with_borders = []
+        total_w = grid_rows[0].shape[1]
+        h_border = np.full((border_thickness, total_w, 3), border_color, dtype=np.uint8)
+        for idx, row_img in enumerate(grid_rows):
+            grid_with_borders.append(row_img)
+            if idx < len(grid_rows) - 1:
+                grid_with_borders.append(h_border)
+        return np.vstack(grid_with_borders)
+    else:
+        return np.vstack(grid_rows)
 
 """
     Display yellow flash across all camera feeds to confirm a shot was taken.
 """
-def flash_capture(capture_list, camera_ids, target_w, target_h):
+def flash_capture(capture_list, camera_ids, cell_w, cell_h, rows, cols):
     for _ in range(8):  
         # Trigger all camera shutters simultaneously
         for cap in capture_list:
@@ -130,18 +199,17 @@ def flash_capture(capture_list, camera_ids, target_w, target_h):
         if frames:
             resized = []
             for cam_id, f in frames:
-                # Force the flash frame to the shared dimensions
-                resized_f = cv2.resize(f, (target_w, target_h))
+                # Force the flash frame to the shared preview cell dimensions
+                resized_f = cv2.resize(f, (cell_w, cell_h))
 
                 overlay = resized_f.copy()
-                cv2.rectangle(overlay, (0, 0), (target_w, target_h), (0, 255, 255), -1)
+                cv2.rectangle(overlay, (0, 0), (cell_w, cell_h), (0, 255, 255), -1)
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
 
-                cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                draw_hud_badge(resized_f, f"CAM {cam_id}", (12, 28), font_scale=0.7, font_thick=2)
                 resized.append(resized_f)
                 
-            combined = grid_layer_camera(resized)
+            combined = grid_layer_camera(resized, rows=rows, cols=cols)
             if combined is not None: 
                 cv2.imshow("All cameras", combined)
                 
@@ -242,8 +310,10 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
 
     total = len(serial_numbers)
     sn_index = 0        # tracks which SN in the queue is currently active
-    target_h = None     # shared display height across all camera feeds
-    target_w = None     # shared display width across all camera feeds
+    cell_w = None       # individual camera preview cell width
+    cell_h = None       # individual camera preview cell height
+    grid_rows = 1       # number of rows in preview grid
+    grid_cols = 1       # number of columns in preview grid
     prev_cam_count = 0  # used to detect camera connect/disconnect events
     last_capture = None # info needed to undo the most recent capture set
     session_capture_sets = 0  # total capture sets taken this session, across all SNs
@@ -281,11 +351,11 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 else:
                     print(f"Warning: Camera {camera_ids[i]} failed to retrieve frame.")
 
-            # Recalculate display height only when the number of active cameras changes
+            # Recalculate display dimensions only when the number of active cameras changes
             if len(frames) != prev_cam_count:
-                # Find the smallest height among all cameras to use as the baseline
-                target_h = min(f.shape[0] for _, f in frames) if frames else None
-                target_w = min(f.shape[1] for _, f in frames) if frames else None
+                native_h = min(f.shape[0] for _, f in frames) if frames else 720
+                native_w = min(f.shape[1] for _, f in frames) if frames else 1280
+                grid_rows, grid_cols, cell_w, cell_h = compute_grid_dimensions(len(frames), native_w, native_h)
                 prev_cam_count = len(frames)
             # Check if we have processed all the typed-in serial numbers
             queue_done = serial_numbers and sn_index >= total
@@ -295,38 +365,34 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 current_sn = serial_numbers[sn_index] if serial_numbers and not queue_done else None
                 resized = []
                 for cam_id, f in frames:
-                    # Scale each frame to the shared target height, preserving aspect ratio
-                    # h, w = f.shape[:2]
-                    # new_w = int(w * target_h / h)
-                    resized_f = cv2.resize(f, (target_w, target_h))
+                    resized_f = cv2.resize(f, (cell_w, cell_h))
 
-                    # Display camera label
-                    cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                    # Display camera label badge
+                    draw_hud_badge(resized_f, f"CAM {cam_id}", (12, 28), font_scale=0.7, font_thick=2)
 
                     # Display current SN and queue progress if serial numbers were entered
                     if current_sn:
-                        cv2.putText(resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
-                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                        draw_hud_badge(resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
+                                       (12, 58), font_scale=0.6, font_thick=1, text_color=(0, 255, 255))
                     elif queue_done:
-                        cv2.putText(resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
-                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                        draw_hud_badge(resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
+                                       (12, 58), font_scale=0.55, font_thick=1, text_color=(0, 255, 255))
                     resized.append(resized_f)
 
                 # Stack all camera feeds into grid layer
-                combined = grid_layer_camera(resized)
+                combined = grid_layer_camera(resized, rows=grid_rows, cols=grid_cols)
                 if combined is not None:
-                    banner_y = combined.shape[0] - 20
+                    banner_y = combined.shape[0] - 15
                     if confirm_quit:
                         # Persistent prompt overrides the normal status banner
                         # until the operator confirms or cancels the quit.
-                        cv2.putText(combined, "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
-                                    (10, banner_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        draw_hud_badge(combined, "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
+                                       (15, banner_y), font_scale=0.65, font_thick=2, text_color=(0, 0, 255), bg_color=(0, 0, 0), alpha=0.85)
                     elif status_frames_left > 0:
                         # Draw the latest status message as a temporary banner across
                         # the bottom of the window (the only visible surface in the GUI build)
-                        cv2.putText(combined, status_message, (10, banner_y),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        draw_hud_badge(combined, status_message,
+                                       (15, banner_y), font_scale=0.65, font_thick=2, text_color=(0, 255, 0), bg_color=(0, 0, 0), alpha=0.85)
                         status_frames_left -= 1
                     cv2.imshow("All cameras", combined)
 
@@ -371,8 +437,8 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                         print(f"Error: failed to save {filename}")
 
                 # Trigger the flashing effect confirmation
-                if target_h:
-                    flash_capture(capture_list, camera_ids, target_w, target_h)
+                if cell_h:
+                    flash_capture(capture_list, camera_ids, cell_w, cell_h, grid_rows, grid_cols)
 
                 if write_failed:
                     notify(f"WARNING: some images failed to save for set {count_img}")
