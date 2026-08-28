@@ -1,14 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-from PyInstaller.utils.hooks import collect_data_files
-
 a = Analysis(
     ['capture_gui.py'],
     pathex=[],
     binaries=[],
-    datas=collect_data_files('customtkinter'),
-    hiddenimports=['customtkinter', 'PIL'],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

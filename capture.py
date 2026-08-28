@@ -299,18 +299,21 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
     # Collect all serial numbers before opening the camera so the operator
     # isn't interrupted mid-session by terminal prompts
     if serial_numbers is None:
-        print("\nEnter serial numbers one per line. Use ENTER again when done: ")
+        print("\nEnter serial numbers (separated by spaces, commas, or one per line). Press ENTER on an empty line when done:")
         serial_numbers = []
         seen_sns = set() # A Set function is used to check for duplicate inputs
         while True:
-            sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
-            if not sn:
-                break # Exit loop if the user hit ENTER
-            if sn in seen_sns:
-                print(f"  ! '{sn}' already in the list — please enter again.")
-                continue
-            serial_numbers.append(sn)
-            seen_sns.add(sn)
+            raw_input = input(f"  SN(s): ").strip()
+            if not raw_input:
+                break # Exit loop if the user hit ENTER on an empty line
+            
+            parts = [p.strip() for p in re.split(r'[,\s]+', raw_input) if p.strip()]
+            for sn in parts:
+                if sn in seen_sns:
+                    print(f"  ! '{sn}' already in the list — skipping duplicate.")
+                    continue
+                serial_numbers.append(sn)
+                seen_sns.add(sn)
     else:
         # Caller (e.g. the GUI) already collected these — just dedupe while preserving order
         seen_sns = set()

@@ -20,6 +20,7 @@ import subprocess
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import re
 
 try:
     import customtkinter as ctk
@@ -449,14 +450,14 @@ class CaptureGUI(ctk.CTk):
 
     def update_sn_counter(self, event=None):
         """Update live serial numbers counter and check for duplicate entries."""
-        raw = self.text_sn.get("1.0", "end")
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        count = len(lines)
+        raw = self.text_sn.get("1.0", "end").strip()
+        items = [p.strip() for p in re.split(r'[,\s]+', raw) if p.strip()]
+        count = len(items)
 
         # Duplicate check
         seen = set()
         duplicates = set()
-        for sn in lines:
+        for sn in items:
             if sn in seen:
                 duplicates.add(sn)
             seen.add(sn)
@@ -488,7 +489,7 @@ class CaptureGUI(ctk.CTk):
         dest_dir = self.entry_dest.get().strip() or self.output_dir
 
         raw_sns = self.text_sn.get("1.0", "end").strip()
-        serial_numbers = [line.strip() for line in raw_sns.splitlines() if line.strip()]
+        serial_numbers = [p.strip() for p in re.split(r'[,\s]+', raw_sns) if p.strip()]
 
         # Validation
         if not part_number:
