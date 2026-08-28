@@ -18,7 +18,9 @@ class CaptureGUI:
         text_font = font.Font(family="Segoe UI", size=14)
         bold_font = font.Font(family="Segoe UI", size=14, weight="bold")
         small_font = font.Font(family="Segoe UI", size=10)
-        status_font = font.Font(family="Segoe UI", size=11)
+        status_font = font.Font(family="Segoe UI", size=13, weight="bold")
+        cam_details_font = font.Font(family="Segoe UI", size=12)
+        btn_font = font.Font(family="Segoe UI", size=11)
         
         # Camera Detection Section
         self.frame_camera = tk.LabelFrame(
@@ -46,7 +48,7 @@ class CaptureGUI:
         self.btn_refresh = tk.Button(
             self.frame_cam_top,
             text="Refresh",
-            font=small_font,
+            font=btn_font,
             command=self.refresh_cameras,
             padx=8,
             pady=2,
@@ -56,7 +58,7 @@ class CaptureGUI:
         self.label_cam_details = tk.Label(
             self.frame_camera,
             text="",
-            font=small_font,
+            font=cam_details_font,
             fg="#444444",
             anchor="w",
             justify="left",
@@ -83,12 +85,14 @@ class CaptureGUI:
         
         self.text_sn = tk.Text(self.root, height=4, width=32, font=text_font)
         self.text_sn.pack(padx=10, pady=(0, 0))
-        # Update the counter each time the operator types in the serial box
+        # Tag style for highlighting duplicate serial numbers
+        self.text_sn.tag_configure("duplicate", background="#FFCDD2", foreground="#B71C1C")
+        # Update the counter and check duplicates each time the operator types
         self.text_sn.bind("<KeyRelease>", self.update_sn_counter)
 
         # Live count of how many serial numbers are currently entered
         self.label_sn_count = tk.Label(self.root, text="0 serial number(s) entered",
-                                       font=small_font)
+                                       font=small_font, fg="#444444")
         self.label_sn_count.pack(padx=10, pady=(2, 8))
 
         # Start the capture button
@@ -159,16 +163,40 @@ class CaptureGUI:
             )
 
     def update_sn_counter(self, event=None):
-        # Show a running total of how many serial numbers are entered
-        raw = self.text_sn.get("1.0", "end")   # everything typed in the box
+        # Remove previous duplicate highlights
+        self.text_sn.tag_remove("duplicate", "1.0", "end")
 
-        # Count each line that actually has text, skipping blank lines
+        raw = self.text_sn.get("1.0", "end")
+        lines = raw.splitlines()
+
+        seen = {}  # sn -> list of line indices (1-indexed)
         count = 0
-        for line in raw.splitlines():
-            if line.strip():   # line has something other than spaces
+        for line_idx, line in enumerate(lines, start=1):
+            cleaned = line.strip()
+            if cleaned:
                 count += 1
+                seen.setdefault(cleaned, []).append(line_idx)
 
-        self.label_sn_count.config(text=f"{count} serial number(s) entered")
+        duplicates = [sn for sn, line_nums in seen.items() if len(line_nums) > 1]
+
+        if duplicates:
+            # Highlight duplicate lines in red
+            for sn in duplicates:
+                for line_idx in seen[sn]:
+                    self.text_sn.tag_add("duplicate", f"{line_idx}.0", f"{line_idx}.end")
+
+            dup_preview = ", ".join(f"'{s}'" for s in duplicates)
+            if len(dup_preview) > 35:
+                dup_preview = dup_preview[:32] + "..."
+            self.label_sn_count.config(
+                text=f"{count} serial(s) entered  ⚠ Duplicate: {dup_preview}",
+                fg="#C62828",
+            )
+        else:
+            self.label_sn_count.config(
+                text=f"{count} serial number(s) entered",
+                fg="#444444",
+            )
 
     def on_start(self):
         if self.is_detecting_cameras:
@@ -209,20 +237,19 @@ class CaptureGUI:
             messagebox.showerror("Missing info", "Please enter a JOB NUMBER.")
             return
 
-        # Flag duplicate serial numbers so the operator can fix them before
-        # capture starts (capture.py would otherwise dedupe them silently).
-        seen_sns = set()
-        duplicate_sns = []
+        # Flag duplicate serial numbers so the operator can fix them before capture starts
+        counts = {}
         for sn in serial_numbers:
-            if sn in seen_sns and sn not in duplicate_sns:
-                duplicate_sns.append(sn)
-            seen_sns.add(sn)
+            counts[sn] = counts.get(sn, 0) + 1
+
+        duplicate_sns = [sn for sn, c in counts.items() if c > 1]
         if duplicate_sns:
+            dup_details = "\n".join(f"  • {sn} (entered {counts[sn]} times)" for sn in duplicate_sns)
             messagebox.showerror(
-                "Duplicate serial number(s)",
-                "The following serial number(s) were entered more than once:\n\n"
-                + "\n".join(duplicate_sns)
-                + "\n\nPlease remove the duplicate(s) and try again.",
+                "Duplicate Serial Number(s) Found",
+                f"Duplicate serial number(s) were detected:\n\n"
+                f"{dup_details}\n\n"
+                f"Please remove or correct the duplicate serial number(s) before starting.",
             )
             return
 

@@ -135,9 +135,26 @@ def grid_layer_camera(frames):
     return np.vstack(grid_rows)
 
 """
+    Draw text with a high-contrast dark outline and anti-aliasing.
+"""
+def draw_text_with_outline(img, text, pos, font_scale, color, thickness=2, outline_color=(0, 0, 0), outline_extra=4):
+    x, y = pos
+    # Draw dark outline for contrast against any camera background
+    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, outline_color, thickness + outline_extra, cv2.LINE_AA)
+    # Draw main text
+    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
+
+"""
     Display yellow flash across all camera feeds to confirm a shot was taken.
 """
 def flash_capture(capture_list, camera_ids, target_w, target_h):
+    scale = max(1.0, target_h / 720.0)
+    font_scale_cam = 2.0 * scale
+    thickness = max(2, int(3 * scale))
+    outline_extra = max(2, int(3 * scale))
+    x_pos = int(30 * scale)
+    y_cam = int(80 * scale)
+
     for _ in range(8):  
         # Trigger all camera shutters simultaneously
         for cap in capture_list:
@@ -161,8 +178,11 @@ def flash_capture(capture_list, camera_ids, target_w, target_h):
                 cv2.rectangle(overlay, (0, 0), (target_w, target_h), (0, 255, 255), -1)
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
 
-                cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                draw_text_with_outline(
+                    resized_f, f"CAM {cam_id}", (x_pos, y_cam),
+                    font_scale_cam, (0, 255, 255), thickness,
+                    outline_extra=outline_extra
+                )
                 resized.append(resized_f)
                 
             combined = grid_layer_camera(resized)
@@ -315,42 +335,71 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
             queue_done = serial_numbers and sn_index >= total
 
             if frames:
+                # Scale overlay fonts and margins proportionally to frame resolution (e.g. 4K, 1080p)
+                scale = max(1.0, target_h / 720.0) if target_h else 1.0
+                font_scale_cam = 2.0 * scale
+                font_scale_sn = 1.6 * scale
+                thickness = max(2, int(3 * scale))
+                outline_extra = max(2, int(3 * scale))
+                x_pos = int(30 * scale)
+                y_cam = int(80 * scale)
+                y_sn = int(160 * scale)
+
                 # Determine which SN to display on the screen
                 current_sn = serial_numbers[sn_index] if serial_numbers and not queue_done else None
                 resized = []
                 for cam_id, f in frames:
-                    # Scale each frame to the shared target height, preserving aspect ratio
-                    # h, w = f.shape[:2]
-                    # new_w = int(w * target_h / h)
                     resized_f = cv2.resize(f, (target_w, target_h))
 
-                    # Display camera label
-                    cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                    # Display camera label with contrast outline
+                    draw_text_with_outline(
+                        resized_f, f"CAM {cam_id}", (x_pos, y_cam),
+                        font_scale_cam, (0, 255, 255), thickness,
+                        outline_extra=outline_extra
+                    )
 
                     # Display current SN and queue progress if serial numbers were entered
                     if current_sn:
-                        cv2.putText(resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
-                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                        draw_text_with_outline(
+                            resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
+                            (x_pos, y_sn), font_scale_sn, (0, 255, 255), thickness,
+                            outline_extra=outline_extra
+                        )
                     elif queue_done:
-                        cv2.putText(resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
-                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                        draw_text_with_outline(
+                            resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
+                            (x_pos, y_sn), font_scale_sn * 0.85, (0, 255, 255), thickness,
+                            outline_extra=outline_extra
+                        )
                     resized.append(resized_f)
 
                 # Stack all camera feeds into grid layer
                 combined = grid_layer_camera(resized)
                 if combined is not None:
-                    banner_y = combined.shape[0] - 20
+                    banner_scale = max(1.0, target_h / 720.0) if target_h else 1.0
+                    banner_font_scale = 1.6 * banner_scale
+                    banner_thickness = max(2, int(3 * banner_scale))
+                    banner_outline = max(2, int(3 * banner_scale))
+                    banner_x = int(35 * banner_scale)
+                    banner_y = combined.shape[0] - int(50 * banner_scale)
+
                     if confirm_quit:
                         # Persistent prompt overrides the normal status banner
                         # until the operator confirms or cancels the quit.
-                        cv2.putText(combined, "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
-                                    (10, banner_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        draw_text_with_outline(
+                            combined,
+                            "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
+                            (banner_x, banner_y), banner_font_scale * 0.9, (0, 0, 255),
+                            banner_thickness, outline_extra=banner_outline
+                        )
                     elif status_frames_left > 0:
                         # Draw the latest status message as a temporary banner across
                         # the bottom of the window (the only visible surface in the GUI build)
-                        cv2.putText(combined, status_message, (10, banner_y),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        draw_text_with_outline(
+                            combined, status_message,
+                            (banner_x, banner_y), banner_font_scale, (0, 255, 0),
+                            banner_thickness, outline_extra=banner_outline
+                        )
                         status_frames_left -= 1
                     cv2.imshow("All cameras", combined)
 
