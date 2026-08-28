@@ -1,5 +1,4 @@
 import os
-import sys
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  # suppress OpenCV console noise
 import cv2
 import re
@@ -76,128 +75,45 @@ def find_all_cameras(max_index=10):
     return camera_ids, captures
 
 """
-    Quickly probe connected cameras and their resolutions without holding
-    the capture devices open. Ideal for GUI pre-flight status checks.
+Display grid layer for the camera 
 """
-def detect_cameras(max_index=10):
-    camera_ids, captures = find_all_cameras(max_index)
-    results = []
-    for cam_id, cap in zip(camera_ids, captures):
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        results.append({"id": cam_id, "width": w, "height": h})
-        cap.release()
-    return results
-
-"""
-    Calculate optimal grid rows, columns, and individual cell preview dimensions
-    so the combined layout fits comfortably on screen without distorting aspect ratios.
-"""
-def compute_grid_dimensions(num_cameras, frame_w, frame_h, max_total_w=1400, max_total_h=800):
-    if num_cameras <= 0:
-        return 1, 1, frame_w, frame_h
-    
-    if num_cameras == 1:
-        rows, cols = 1, 1
-    elif num_cameras == 2:
-        # For 2 cameras, side-by-side if landscape/square, stacked if portrait
-        if frame_w >= frame_h:
-            rows, cols = 1, 2
-        else:
-            rows, cols = 2, 1
-    elif num_cameras <= 4:
-        rows, cols = 2, 2
-    elif num_cameras <= 6:
-        rows, cols = 2, 3
-    elif num_cameras <= 9:
-        rows, cols = 3, 3
-    else:
-        cols = math.ceil(math.sqrt(num_cameras))
-        rows = math.ceil(num_cameras / cols)
-    
-    # Calculate cell preview size to fit within max_total_w x max_total_h
-    scale_w = max_total_w / (cols * frame_w)
-    scale_h = max_total_h / (rows * frame_h)
-    scale = min(1.0, scale_w, scale_h)  # Do not upscale past native resolution
-    
-    cell_w = max(160, int(frame_w * scale))
-    cell_h = max(120, int(frame_h * scale))
-    
-    return rows, cols, cell_w, cell_h
-
-"""
-    Draw a semi-transparent HUD badge with anti-aliased text for crisp readability.
-"""
-def draw_hud_badge(img, text, pos, font_scale=0.7, font_thick=2, text_color=(0, 255, 255), bg_color=(20, 20, 20), alpha=0.65):
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    (tw, th), baseline = cv2.getTextSize(text, font, font_scale, font_thick)
-    x, y = pos
-    pad = 4
-    x1, y1 = max(0, x - pad), max(0, y - th - pad)
-    x2, y2 = min(img.shape[1], x + tw + pad), min(img.shape[0], y + baseline + pad)
-    
-    if x2 > x1 and y2 > y1:
-        overlay = img[y1:y2, x1:x2].copy()
-        box = np.full_like(overlay, bg_color)
-        img[y1:y2, x1:x2] = cv2.addWeighted(box, alpha, overlay, 1 - alpha, 0)
-        
-    cv2.putText(img, text, (x, y), font, font_scale, text_color, font_thick, cv2.LINE_AA)
-
-"""
-    Display responsive grid layer for the camera feeds with clean cell borders.
-"""
-def grid_layer_camera(frames, rows=None, cols=None, border_thickness=2, border_color=(40, 40, 40)):
+def grid_layer_camera(frames):
     # If no cameras are connected, do nothing to avoid crashing
     if not frames:
         return None
+    # Work on a copy so don't mutate the caller's list when padding
     frames = list(frames)
+    # Count how many camera during the capture session
     num_frames = len(frames)
+    # Calculate the square dimension
+    # ceil() to round up the nearest whole number 
+    cols = math.ceil(math.sqrt(num_frames))
+    rows = math.ceil(num_frames / cols)
     
-    if rows is None or cols is None:
-        cols = math.ceil(math.sqrt(num_frames))
-        rows = math.ceil(num_frames / cols)
+    # Looks at the very first camera in the list
+    # then takes its dimension (height, width) and generates a brand new image of the exact same size,
+    # but filled entirely with zeros. We will have a sized black square
+    placeholder_frames = np.zeros_like(frames[0])
     
-    # Create empty placeholder slot if needed
-    h, w = frames[0].shape[:2]
-    placeholder_frame = np.zeros((h, w, 3), dtype=np.uint8)
-    cv2.putText(placeholder_frame, "No Camera", (max(10, w // 2 - 50), max(20, h // 2)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 80, 80), 1, cv2.LINE_AA)
-    
+    # Padding the grid, fewer image > grid slots 
+    # adding placeholder to the end of the list 
     while len(frames) < rows * cols:
-        frames.append(placeholder_frame)
+        frames.append(placeholder_frames)
     
+    # Create the grid one row at a time
     grid_rows = [] 
     for r in range(rows):
-        row_frames = frames[r * cols: (r + 1) * cols]
-        # Add subtle vertical border between cells
-        if border_thickness > 0 and len(row_frames) > 1:
-            row_with_borders = []
-            v_border = np.full((h, border_thickness, 3), border_color, dtype=np.uint8)
-            for idx, cell in enumerate(row_frames):
-                row_with_borders.append(cell)
-                if idx < len(row_frames) - 1:
-                    row_with_borders.append(v_border)
-            grid_rows.append(np.hstack(row_with_borders))
-        else:
-            grid_rows.append(np.hstack(row_frames))
-
-    # Add horizontal border between rows
-    if border_thickness > 0 and len(grid_rows) > 1:
-        grid_with_borders = []
-        total_w = grid_rows[0].shape[1]
-        h_border = np.full((border_thickness, total_w, 3), border_color, dtype=np.uint8)
-        for idx, row_img in enumerate(grid_rows):
-            grid_with_borders.append(row_img)
-            if idx < len(grid_rows) - 1:
-                grid_with_borders.append(h_border)
-        return np.vstack(grid_with_borders)
-    else:
-        return np.vstack(grid_rows)
+        # Array Slicing: Grabs a chunk of images from the list.
+        # Example for 3 columns: Row 0 grabs indices 0 to 3. Row 1 grabs 3 to 6.
+        row_frames = frames[r * cols: (r+1) * cols]
+        grid_rows.append(np.hstack(row_frames))
+    # Vertical stack - top to bottom
+    return np.vstack(grid_rows)
 
 """
     Display yellow flash across all camera feeds to confirm a shot was taken.
 """
-def flash_capture(capture_list, camera_ids, cell_w, cell_h, rows, cols):
+def flash_capture(capture_list, camera_ids, target_w, target_h):
     for _ in range(8):  
         # Trigger all camera shutters simultaneously
         for cap in capture_list:
@@ -214,17 +130,18 @@ def flash_capture(capture_list, camera_ids, cell_w, cell_h, rows, cols):
         if frames:
             resized = []
             for cam_id, f in frames:
-                # Force the flash frame to the shared preview cell dimensions
-                resized_f = cv2.resize(f, (cell_w, cell_h))
+                # Force the flash frame to the shared dimensions
+                resized_f = cv2.resize(f, (target_w, target_h))
 
                 overlay = resized_f.copy()
-                cv2.rectangle(overlay, (0, 0), (cell_w, cell_h), (0, 255, 255), -1)
+                cv2.rectangle(overlay, (0, 0), (target_w, target_h), (0, 255, 255), -1)
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
 
-                draw_hud_badge(resized_f, f"CAM {cam_id}", (12, 28), font_scale=0.7, font_thick=2)
+                cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 resized.append(resized_f)
                 
-            combined = grid_layer_camera(resized, rows=rows, cols=cols)
+            combined = grid_layer_camera(resized)
             if combined is not None: 
                 cv2.imshow("All cameras", combined)
                 
@@ -238,7 +155,7 @@ def flash_capture(capture_list, camera_ids, cell_w, cell_h, rows, cols):
       4. Open the live camera feed and wait for SPACE to capture or ESC to quit.
       5. Each SPACE press saves one image per camera and advances to the next SN.
 """
-def start_capture(part_number=None, job_number=None, serial_numbers=None, output_dir=None):
+def start_capture(part_number=None, job_number=None, serial_numbers=None):
 
     print("Capture begin...This may take a moment")
 
@@ -257,10 +174,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
     # Images are saved under: <PART_NUMBER>/JOB_<JOB_NUMBER>/SN_<serial>/
     # so that all images for one serial number live together and can be
     # found without scanning the whole job folder.
-    if output_dir:
-        folder = os.path.join(output_dir, f"{part_number}", f"JOB_{job_number}")
-    else:
-        folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
+    folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
     if not os.path.exists(folder):
         os.makedirs(folder)
         print(f"Created folder: {folder}")
@@ -299,21 +213,18 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
     # Collect all serial numbers before opening the camera so the operator
     # isn't interrupted mid-session by terminal prompts
     if serial_numbers is None:
-        print("\nEnter serial numbers (separated by spaces, commas, or one per line). Press ENTER on an empty line when done:")
+        print("\nEnter serial numbers one per line. Use ENTER again when done: ")
         serial_numbers = []
         seen_sns = set() # A Set function is used to check for duplicate inputs
         while True:
-            raw_input = input(f"  SN(s): ").strip()
-            if not raw_input:
-                break # Exit loop if the user hit ENTER on an empty line
-            
-            parts = [p.strip() for p in re.split(r'[,\s]+', raw_input) if p.strip()]
-            for sn in parts:
-                if sn in seen_sns:
-                    print(f"  ! '{sn}' already in the list — skipping duplicate.")
-                    continue
-                serial_numbers.append(sn)
-                seen_sns.add(sn)
+            sn = input(f"  SN {len(serial_numbers) + 1}: ").strip()
+            if not sn:
+                break # Exit loop if the user hit ENTER
+            if sn in seen_sns:
+                print(f"  ! '{sn}' already in the list — please enter again.")
+                continue
+            serial_numbers.append(sn)
+            seen_sns.add(sn)
     else:
         # Caller (e.g. the GUI) already collected these — just dedupe while preserving order
         seen_sns = set()
@@ -331,10 +242,8 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
 
     total = len(serial_numbers)
     sn_index = 0        # tracks which SN in the queue is currently active
-    cell_w = None       # individual camera preview cell width
-    cell_h = None       # individual camera preview cell height
-    grid_rows = 1       # number of rows in preview grid
-    grid_cols = 1       # number of columns in preview grid
+    target_h = None     # shared display height across all camera feeds
+    target_w = None     # shared display width across all camera feeds
     prev_cam_count = 0  # used to detect camera connect/disconnect events
     last_capture = None # info needed to undo the most recent capture set
     session_capture_sets = 0  # total capture sets taken this session, across all SNs
@@ -353,9 +262,6 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
 
     print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit (press twice to confirm)")
     
-    last_frames = {cam_id: None for cam_id in camera_ids}
-    failed_counts = {cam_id: 0 for cam_id in camera_ids}
-
     cv2.namedWindow("All cameras", cv2.WINDOW_NORMAL)
 
     try:
@@ -370,26 +276,16 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
             frames = []
             for i, cap in enumerate(capture_list):
                 ret, frame = cap.retrieve()
-                cam_id = camera_ids[i]
                 if ret:
-                    frames.append((cam_id, frame))
-                    last_frames[cam_id] = frame
-                    failed_counts[cam_id] = 0
+                    frames.append((camera_ids[i], frame))
                 else:
-                    if last_frames[cam_id] is not None:
-                        # Use the last good frame to prevent the UI grid from collapsing
-                        frames.append((cam_id, last_frames[cam_id]))
-                    
-                    failed_counts[cam_id] += 1
-                    # Throttle warning spam to once every 30 dropped frames
-                    if failed_counts[cam_id] % 30 == 1:
-                        print(f"Warning: Camera {cam_id} failed to retrieve frame ({failed_counts[cam_id]} times).")
+                    print(f"Warning: Camera {camera_ids[i]} failed to retrieve frame.")
 
-            # Recalculate display dimensions only when the number of active cameras changes
+            # Recalculate display height only when the number of active cameras changes
             if len(frames) != prev_cam_count:
-                native_h = min(f.shape[0] for _, f in frames) if frames else 720
-                native_w = min(f.shape[1] for _, f in frames) if frames else 1280
-                grid_rows, grid_cols, cell_w, cell_h = compute_grid_dimensions(len(frames), native_w, native_h)
+                # Find the smallest height among all cameras to use as the baseline
+                target_h = min(f.shape[0] for _, f in frames) if frames else None
+                target_w = min(f.shape[1] for _, f in frames) if frames else None
                 prev_cam_count = len(frames)
             # Check if we have processed all the typed-in serial numbers
             queue_done = serial_numbers and sn_index >= total
@@ -399,34 +295,38 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
                 current_sn = serial_numbers[sn_index] if serial_numbers and not queue_done else None
                 resized = []
                 for cam_id, f in frames:
-                    resized_f = cv2.resize(f, (cell_w, cell_h))
+                    # Scale each frame to the shared target height, preserving aspect ratio
+                    # h, w = f.shape[:2]
+                    # new_w = int(w * target_h / h)
+                    resized_f = cv2.resize(f, (target_w, target_h))
 
-                    # Display camera label badge
-                    draw_hud_badge(resized_f, f"CAM {cam_id}", (12, 28), font_scale=0.7, font_thick=2)
+                    # Display camera label
+                    cv2.putText(resized_f, f"CAM {cam_id}", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
                     # Display current SN and queue progress if serial numbers were entered
                     if current_sn:
-                        draw_hud_badge(resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
-                                       (12, 58), font_scale=0.6, font_thick=1, text_color=(0, 255, 255))
+                        cv2.putText(resized_f, f"SN: {current_sn}  ({sn_index + 1} of {total})",
+                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                     elif queue_done:
-                        draw_hud_badge(resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
-                                       (12, 58), font_scale=0.55, font_thick=1, text_color=(0, 255, 255))
+                        cv2.putText(resized_f, "All SNs captured - [R] Retake  [ESC] Finish",
+                                    (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                     resized.append(resized_f)
 
                 # Stack all camera feeds into grid layer
-                combined = grid_layer_camera(resized, rows=grid_rows, cols=grid_cols)
+                combined = grid_layer_camera(resized)
                 if combined is not None:
-                    banner_y = combined.shape[0] - 15
+                    banner_y = combined.shape[0] - 20
                     if confirm_quit:
                         # Persistent prompt overrides the normal status banner
                         # until the operator confirms or cancels the quit.
-                        draw_hud_badge(combined, "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
-                                       (15, banner_y), font_scale=0.65, font_thick=2, text_color=(0, 0, 255), bg_color=(0, 0, 0), alpha=0.85)
+                        cv2.putText(combined, "Quit session? Press ESC again to confirm, or any other key to keep capturing.",
+                                    (10, banner_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     elif status_frames_left > 0:
                         # Draw the latest status message as a temporary banner across
                         # the bottom of the window (the only visible surface in the GUI build)
-                        draw_hud_badge(combined, status_message,
-                                       (15, banner_y), font_scale=0.65, font_thick=2, text_color=(0, 255, 0), bg_color=(0, 0, 0), alpha=0.85)
+                        cv2.putText(combined, status_message, (10, banner_y),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                         status_frames_left -= 1
                     cv2.imshow("All cameras", combined)
 
@@ -471,8 +371,8 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
                         print(f"Error: failed to save {filename}")
 
                 # Trigger the flashing effect confirmation
-                if cell_h:
-                    flash_capture(capture_list, camera_ids, cell_w, cell_h, grid_rows, grid_cols)
+                if target_h:
+                    flash_capture(capture_list, camera_ids, target_w, target_h)
 
                 if write_failed:
                     notify(f"WARNING: some images failed to save for set {count_img}")
@@ -538,20 +438,13 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
                 print(f"  SNs Captured: {', '.join(captured_sns)}")
             if missed_sns:
                 print(f"  SNs Missed  : {', '.join(missed_sns)}")
-        # Open the output folder in File Explorer / Finder so the operator can verify
+        print(f"  Saved To    : {os.path.abspath(folder)}")
+        print("=" * 40 + "\n")
+
+        # Open the output folder in File Explorer so the operator can verify
         # the images right away, without hunting for the path themselves.
-        if total_captures > 0:
-            try:
-                if os.name == 'nt':
-                    os.startfile(os.path.abspath(folder))
-                elif sys.platform == 'darwin':
-                    import subprocess
-                    subprocess.run(['open', os.path.abspath(folder)], check=False)
-                else:
-                    import subprocess
-                    subprocess.run(['xdg-open', os.path.abspath(folder)], check=False)
-            except Exception:
-                pass
+        if total_captures > 0 and os.name == 'nt':
+            os.startfile(os.path.abspath(folder))
 
 
 if __name__ == "__main__":
