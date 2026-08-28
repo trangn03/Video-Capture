@@ -353,6 +353,9 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
 
     print("\n[SPACE] to Capture | [R] to Retake Last | [ESC] to Quit (press twice to confirm)")
     
+    last_frames = {cam_id: None for cam_id in camera_ids}
+    failed_counts = {cam_id: 0 for cam_id in camera_ids}
+
     cv2.namedWindow("All cameras", cv2.WINDOW_NORMAL)
 
     try:
@@ -367,10 +370,20 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None, output
             frames = []
             for i, cap in enumerate(capture_list):
                 ret, frame = cap.retrieve()
+                cam_id = camera_ids[i]
                 if ret:
-                    frames.append((camera_ids[i], frame))
+                    frames.append((cam_id, frame))
+                    last_frames[cam_id] = frame
+                    failed_counts[cam_id] = 0
                 else:
-                    print(f"Warning: Camera {camera_ids[i]} failed to retrieve frame.")
+                    if last_frames[cam_id] is not None:
+                        # Use the last good frame to prevent the UI grid from collapsing
+                        frames.append((cam_id, last_frames[cam_id]))
+                    
+                    failed_counts[cam_id] += 1
+                    # Throttle warning spam to once every 30 dropped frames
+                    if failed_counts[cam_id] % 30 == 1:
+                        print(f"Warning: Camera {cam_id} failed to retrieve frame ({failed_counts[cam_id]} times).")
 
             # Recalculate display dimensions only when the number of active cameras changes
             if len(frames) != prev_cam_count:

@@ -63,7 +63,8 @@ class CaptureGUI(ctk.CTk):
 
         # Keyboard shortcuts
         self.bind("<Control-Return>", lambda e: self.on_start())
-        self.bind("<Command-Return>", lambda e: self.on_start())
+        if sys.platform == "darwin":
+            self.bind("<Command-Return>", lambda e: self.on_start())
 
         # Start initial camera probe in background
         self.check_cameras()
@@ -237,45 +238,6 @@ class CaptureGUI(ctk.CTk):
         )
         title.pack(side="left")
 
-        # Action tools on top right of card
-        tools_row = ctk.CTkFrame(top_row, fg_color="transparent")
-        tools_row.pack(side="right")
-
-        btn_paste = ctk.CTkButton(
-            tools_row,
-            text="📋 Paste",
-            width=65,
-            height=24,
-            font=ctk.CTkFont(size=11),
-            fg_color="gray30",
-            hover_color="gray20",
-            command=self._paste_clipboard
-        )
-        btn_paste.pack(side="left", padx=(0, 4))
-
-        btn_import = ctk.CTkButton(
-            tools_row,
-            text="📂 Import",
-            width=68,
-            height=24,
-            font=ctk.CTkFont(size=11),
-            fg_color="gray30",
-            hover_color="gray20",
-            command=self._import_serials_file
-        )
-        btn_import.pack(side="left", padx=(0, 4))
-
-        btn_clear = ctk.CTkButton(
-            tools_row,
-            text="🧹 Clear",
-            width=60,
-            height=24,
-            font=ctk.CTkFont(size=11),
-            fg_color="gray30",
-            hover_color="#991B1B",
-            command=self._clear_serials
-        )
-        btn_clear.pack(side="right")
 
         # Multiline Serial Number Textbox
         self.text_sn = ctk.CTkTextbox(
@@ -416,37 +378,6 @@ class CaptureGUI(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open folder: {e}")
 
-    def _paste_clipboard(self):
-        """Paste clipboard content into the serial number textbox."""
-        try:
-            clipboard = self.clipboard_get()
-            self.text_sn.insert("end", clipboard + "\n")
-            self.update_sn_counter()
-        except Exception:
-            pass
-
-    def _import_serials_file(self):
-        """Import serial numbers from a plain text or CSV file."""
-        file_path = filedialog.askopenfilename(
-            title="Import Serial Numbers",
-            filetypes=[("Text & CSV Files", "*.txt *.csv"), ("All Files", "*.*")]
-        )
-        if not file_path:
-            return
-
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = [line.strip() for line in f if line.strip()]
-            if lines:
-                self.text_sn.insert("end", "\n".join(lines) + "\n")
-                self.update_sn_counter()
-        except Exception as e:
-            messagebox.showerror("Import Error", f"Could not read file:\n{e}")
-
-    def _clear_serials(self):
-        """Clear the serial numbers input box."""
-        self.text_sn.delete("1.0", "end")
-        self.update_sn_counter()
 
     def update_sn_counter(self, event=None):
         """Update live serial numbers counter and check for duplicate entries."""
@@ -551,9 +482,8 @@ class CaptureGUI(ctk.CTk):
         threading.Thread(target=capture_thread, daemon=True).start()
 
     def _restore_dashboard(self):
-        """Restore window visibility and re-verify camera health."""
-        self.deiconify()
-        self.check_cameras()
+        """Destroy window and exit the application."""
+        self.destroy()
 
 
 if __name__ == "__main__":
