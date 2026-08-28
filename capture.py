@@ -1,4 +1,5 @@
 import os
+import sys
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  # suppress OpenCV console noise
 import cv2
 import re
@@ -237,7 +238,7 @@ def flash_capture(capture_list, camera_ids, cell_w, cell_h, rows, cols):
       4. Open the live camera feed and wait for SPACE to capture or ESC to quit.
       5. Each SPACE press saves one image per camera and advances to the next SN.
 """
-def start_capture(part_number=None, job_number=None, serial_numbers=None):
+def start_capture(part_number=None, job_number=None, serial_numbers=None, output_dir=None):
 
     print("Capture begin...This may take a moment")
 
@@ -256,7 +257,10 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
     # Images are saved under: <PART_NUMBER>/JOB_<JOB_NUMBER>/SN_<serial>/
     # so that all images for one serial number live together and can be
     # found without scanning the whole job folder.
-    folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
+    if output_dir:
+        folder = os.path.join(output_dir, f"{part_number}", f"JOB_{job_number}")
+    else:
+        folder = os.path.join(f"{part_number}", f"JOB_{job_number}")
     if not os.path.exists(folder):
         os.makedirs(folder)
         print(f"Created folder: {folder}")
@@ -518,13 +522,20 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 print(f"  SNs Captured: {', '.join(captured_sns)}")
             if missed_sns:
                 print(f"  SNs Missed  : {', '.join(missed_sns)}")
-        print(f"  Saved To    : {os.path.abspath(folder)}")
-        print("=" * 40 + "\n")
-
-        # Open the output folder in File Explorer so the operator can verify
+        # Open the output folder in File Explorer / Finder so the operator can verify
         # the images right away, without hunting for the path themselves.
-        if total_captures > 0 and os.name == 'nt':
-            os.startfile(os.path.abspath(folder))
+        if total_captures > 0:
+            try:
+                if os.name == 'nt':
+                    os.startfile(os.path.abspath(folder))
+                elif sys.platform == 'darwin':
+                    import subprocess
+                    subprocess.run(['open', os.path.abspath(folder)], check=False)
+                else:
+                    import subprocess
+                    subprocess.run(['xdg-open', os.path.abspath(folder)], check=False)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
