@@ -75,6 +75,30 @@ def find_all_cameras(max_index=10):
     return camera_ids, captures
 
 """
+    Probe camera indices 0 through max_index-1 and return their status and
+    resolution info without holding the capture devices open.
+
+    Returns:
+        list[dict]: [{'id': int, 'width': int, 'height': int}, ...]
+"""
+def probe_cameras(max_index=10):
+    detected = []
+    camera_api = cv2.CAP_DSHOW if os.name == 'nt' else cv2.CAP_ANY
+
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i, camera_api)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            detected.append({"id": i, "width": actual_w, "height": actual_h})
+            cap.release()
+    return detected
+
+
+"""
 Display grid layer for the camera 
 """
 def grid_layer_camera(frames):
