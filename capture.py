@@ -147,13 +147,18 @@ def draw_text_with_outline(img, text, pos, font_scale, color, thickness=2, outli
 """
     Display yellow flash across all camera feeds to confirm a shot was taken.
 """
-def flash_capture(capture_list, camera_ids, target_w, target_h):
+def flash_capture(capture_list, camera_ids, target_w, target_h, camera_names=None):
     scale = max(1.0, target_h / 720.0)
     font_scale_cam = 2.0 * scale
     thickness = max(2, int(3 * scale))
     outline_extra = max(2, int(3 * scale))
     x_pos = int(30 * scale)
     y_cam = int(80 * scale)
+
+    def get_label(cid):
+        if camera_names and cid in camera_names and camera_names[cid]:
+            return camera_names[cid]
+        return f"CAM {cid}"
 
     for _ in range(8):  
         # Trigger all camera shutters simultaneously
@@ -179,7 +184,7 @@ def flash_capture(capture_list, camera_ids, target_w, target_h):
                 resized_f = cv2.addWeighted(resized_f, 0.6, overlay, 0.4, 0)
 
                 draw_text_with_outline(
-                    resized_f, f"CAM {cam_id}", (x_pos, y_cam),
+                    resized_f, get_label(cam_id), (x_pos, y_cam),
                     font_scale_cam, (0, 255, 255), thickness,
                     outline_extra=outline_extra
                 )
@@ -199,7 +204,7 @@ def flash_capture(capture_list, camera_ids, target_w, target_h):
       4. Open the live camera feed and wait for SPACE to capture or ESC to quit.
       5. Each SPACE press saves one image per camera and advances to the next SN.
 """
-def start_capture(part_number=None, job_number=None, serial_numbers=None):
+def start_capture(part_number=None, job_number=None, serial_numbers=None, camera_names=None):
 
     print("Capture begin...This may take a moment")
 
@@ -284,6 +289,17 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
     else:
         print("No serial numbers entered. Captures will start and save without SN.")
 
+    # Helper to resolve custom camera names and clean filename tags
+    def get_cam_label(cid):
+        if camera_names and cid in camera_names and camera_names[cid]:
+            return str(camera_names[cid]).strip()
+        return f"CAM {cid}"
+
+    def get_cam_tag(cid):
+        label = get_cam_label(cid)
+        clean = "".join(c for c in label if c.isalnum() or c in ("-", "_"))
+        return clean if clean else f"CAM{cid}"
+
     total = len(serial_numbers)
     sn_index = 0        # tracks which SN in the queue is currently active
     target_h = None     # shared display height across all camera feeds
@@ -320,10 +336,14 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
             frames = []
             for i, cap in enumerate(capture_list):
                 ret, frame = cap.retrieve()
+                if not ret:
+                    # Quick retry grab in case of USB hub timing glitch
+                    cap.grab()
+                    ret, frame = cap.retrieve()
                 if ret:
                     frames.append((camera_ids[i], frame))
                 else:
-                    print(f"Warning: Camera {camera_ids[i]} failed to retrieve frame.")
+                    print(f"Warning: Camera {camera_ids[i]} ({get_cam_label(camera_ids[i])}) failed to retrieve frame.")
 
             # Recalculate display height only when the number of active cameras changes
             if len(frames) != prev_cam_count:
@@ -351,9 +371,9 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 for cam_id, f in frames:
                     resized_f = cv2.resize(f, (target_w, target_h))
 
-                    # Display camera label with contrast outline
+                    # Display custom camera label with contrast outline
                     draw_text_with_outline(
-                        resized_f, f"CAM {cam_id}", (x_pos, y_cam),
+                        resized_f, get_cam_label(cam_id), (x_pos, y_cam),
                         font_scale_cam, (0, 255, 255), thickness,
                         outline_extra=outline_extra
                     )
@@ -430,13 +450,14 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
                 saved_files = []
                 write_failed = False
                 for cam_id, frame in frames:
+                    cam_tag = get_cam_tag(cam_id)
                     # Include SN in filename too, for extra safety if files get moved around
                     if current_sn:
                         filename = os.path.join(
-                            sn_folder, f"PART_{part_number}_CAM{cam_id}_SN{current_sn}_{count_img}.jpg")
+                            sn_folder, f"PART_{part_number}_{cam_tag}_SN{current_sn}_{count_img}.jpg")
                     else:
                         filename = os.path.join(
-                            sn_folder, f"PART_{part_number}_CAM{cam_id}_{count_img}.jpg")
+                            sn_folder, f"PART_{part_number}_{cam_tag}_{count_img}.jpg")
                     if cv2.imwrite(filename, frame):
                         saved_files.append(filename)
                     else:
@@ -445,7 +466,7 @@ def start_capture(part_number=None, job_number=None, serial_numbers=None):
 
                 # Trigger the flashing effect confirmation
                 if target_h:
-                    flash_capture(capture_list, camera_ids, target_w, target_h)
+                    flash_capture(capture_list, camera_ids, target_w, target_h, camera_names=camera_names)
 
                 if write_failed:
                     notify(f"WARNING: some images failed to save for set {count_img}")

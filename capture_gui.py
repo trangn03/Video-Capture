@@ -1,25 +1,30 @@
+import os
+import json
 import tkinter as tk
 from tkinter import messagebox, font
 import threading
 import capture
+
+CONFIG_FILE = "camera_config.json"
 
 class CaptureGUI:
     def __init__(self):
         # Window set up
         self.root = tk.Tk()
         self.root.title("Capture Dashboard")
-        self.root.geometry("560x650")
+        self.root.geometry("560x680")
         
         # State
         self.detected_cameras = []
         self.is_detecting_cameras = False
+        self.cam_name_entries = {}
 
         # Create custom font objects
         text_font = font.Font(family="Segoe UI", size=14)
         bold_font = font.Font(family="Segoe UI", size=14, weight="bold")
         small_font = font.Font(family="Segoe UI", size=10)
         status_font = font.Font(family="Segoe UI", size=13, weight="bold")
-        cam_details_font = font.Font(family="Segoe UI", size=12)
+        cam_details_font = font.Font(family="Segoe UI", size=11)
         btn_font = font.Font(family="Segoe UI", size=11)
         
         # Camera Detection Section
@@ -55,15 +60,9 @@ class CaptureGUI:
         )
         self.btn_refresh.pack(side="right")
 
-        self.label_cam_details = tk.Label(
-            self.frame_camera,
-            text="",
-            font=cam_details_font,
-            fg="#444444",
-            anchor="w",
-            justify="left",
-        )
-        self.label_cam_details.pack(fill="x", pady=(4, 0))
+        # Container for camera list with editable labels
+        self.frame_cam_list = tk.Frame(self.frame_camera)
+        self.frame_cam_list.pack(fill="x", pady=(4, 0))
 
         # Entering part number
         self.label_part = tk.Label(self.root, text="Enter PART NUMBER:", font=text_font)
@@ -113,6 +112,25 @@ class CaptureGUI:
 
         self.root.mainloop()
 
+    # ---- Camera Config Storage ----
+    def _load_cam_config(self):
+        """Load saved camera names from JSON."""
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_cam_config(self, names_dict):
+        """Save camera names to JSON."""
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(names_dict, f, indent=2)
+        except Exception:
+            pass
+
     def refresh_cameras(self):
         """Starts asynchronous camera detection in a background thread."""
         if self.is_detecting_cameras:
@@ -121,10 +139,11 @@ class CaptureGUI:
         self.is_detecting_cameras = True
         self.btn_refresh.config(state="disabled")
         self.label_cam_status.config(
-            text="Scanning camera devices... (please wait)",
+            text="● Scanning camera devices... (please wait)",
             fg="#0055A5",
         )
-        self.label_cam_details.config(text="")
+        for child in self.frame_cam_list.winfo_children():
+            child.destroy()
 
         thread = threading.Thread(target=self._detect_cameras_worker, daemon=True)
         thread.start()
@@ -140,27 +159,61 @@ class CaptureGUI:
         self.detected_cameras = cameras
         self.is_detecting_cameras = False
         self.btn_refresh.config(state="normal")
+        self.cam_name_entries = {}
+
+        for child in self.frame_cam_list.winfo_children():
+            child.destroy()
 
         count = len(cameras)
+        saved_names = self._load_cam_config()
+
         if count > 0:
             self.label_cam_status.config(
-                text=f"{count} camera(s) ready",
+                text=f"● {count} camera(s) ready",
                 fg="#2E7D32",  # Green
             )
-            details = "\n".join(
-                f"• Camera {cam['id']}: {cam['width']}x{cam['height']}"
-                for cam in cameras
-            )
-            self.label_cam_details.config(text=details, fg="#2E7D32")
+
+            default_presets = ["Top View", "Side View", "Angle View", "Macro View"]
+
+            for idx, cam in enumerate(cameras):
+                cam_id = cam['id']
+                default_name = saved_names.get(
+                    str(cam_id), 
+                    default_presets[idx] if idx < len(default_presets) else f"Camera {cam_id}"
+                )
+
+                row = tk.Frame(self.frame_cam_list)
+                row.pack(fill="x", pady=2)
+
+                tk.Label(
+                    row,
+                    text=f"  ● Camera {cam_id} ({cam['width']}x{cam['height']})",
+                    font=font.Font(family="Segoe UI", size=10, weight="bold"),
+                    fg="#2E7D32"
+                ).pack(side="left")
+
+                tk.Label(
+                    row,
+                    text="   Label: ",
+                    font=font.Font(family="Segoe UI", size=9),
+                    fg="#555555"
+                ).pack(side="left")
+
+                entry = tk.Entry(row, font=font.Font(family="Segoe UI", size=9), width=16)
+                entry.insert(0, default_name)
+                entry.pack(side="left")
+                self.cam_name_entries[cam_id] = entry
         else:
             self.label_cam_status.config(
-                text="No cameras detected",
+                text="● No cameras detected",
                 fg="#C62828",  # Red
             )
-            self.label_cam_details.config(
-                text="Please connect your camera(s) and click 'Refresh'.",
-                fg="#C62828",
-            )
+            tk.Label(
+                self.frame_cam_list,
+                text="  Please connect your camera(s) and click 'Refresh'.",
+                font=font.Font(family="Segoe UI", size=10),
+                fg="#C62828"
+            ).pack(anchor="w", pady=(2, 0))
 
     def update_sn_counter(self, event=None):
         # Remove previous duplicate highlights
@@ -253,7 +306,19 @@ class CaptureGUI:
             )
             return
 
-        # 3. Hide the GUI while the OpenCV capture window runs on the main thread,
+        # 3. Read & Persist Camera Names
+        camera_names = {}
+        for cam in self.detected_cameras:
+            cid = cam["id"]
+            if cid in self.cam_name_entries:
+                custom_name = self.cam_name_entries[cid].get().strip()
+                camera_names[cid] = custom_name if custom_name else f"CAM{cid}"
+            else:
+                camera_names[cid] = f"CAM{cid}"
+
+        self._save_cam_config({str(k): v for k, v in camera_names.items()})
+
+        # 4. Hide the GUI while the OpenCV capture window runs on the main thread,
         #    then bring the GUI back once the session ends (ESC / window closed).
         self.root.withdraw()
         try:
@@ -261,6 +326,7 @@ class CaptureGUI:
                 part_number=part_number,
                 job_number=job_number,
                 serial_numbers=serial_numbers,
+                camera_names=camera_names,
             )
         except Exception as e:
             messagebox.showerror("Capture error", str(e))
@@ -270,4 +336,3 @@ class CaptureGUI:
 
 if __name__ == "__main__":
     CaptureGUI()
-
